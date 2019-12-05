@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2019, 2019 IBM Corp. and others
+ * Copyright (c) 2019, 2020 IBM Corp. and others
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
@@ -24,6 +24,7 @@
 
 #include "codegen/ARM64Instruction.hpp"
 #include "codegen/CodeGenerator.hpp"
+#include "codegen/Relocation.hpp"
 
 uint8_t *TR::ARM64RecompilationSnippet::emitSnippetBody()
    {
@@ -34,6 +35,11 @@ uint8_t *TR::ARM64RecompilationSnippet::emitSnippetBody()
 
    // bl symref
    *(int32_t *)buffer = cg()->encodeHelperBranchAndLink(countingRecompMethodSymRef, buffer, getNode());
+   cg()->addExternalRelocation(new (cg()->trHeapMemory())
+                               TR::ExternalRelocation(buffer, (uint8_t *)countingRecompMethodSymRef, TR_HelperAddress, cg()),
+                               __FILE__,
+                               __LINE__,
+                               getNode());
    buffer += ARM64_INSTRUCTION_LENGTH;
 
    // bodyinfo
@@ -49,7 +55,12 @@ uint8_t *TR::ARM64RecompilationSnippet::emitSnippetBody()
 
 uint32_t TR::ARM64RecompilationSnippet::getLength(int32_t estimatedSnippetStart)
    {
-   return ARM64_INSTRUCTION_LENGTH + sizeof(intptr_t) + sizeof(intptr_t);
+   /*
+    * bl TR_ARMcountingRecompileMethod
+    * .dword jittedBodyInfo
+    * .dword code start location
+    */
+   return ARM64_INSTRUCTION_LENGTH + sizeof(intptr_t)*2;
    }
 
 void

@@ -88,6 +88,20 @@ inline uint32_t getJitEntryOffset(J9::PrivateLinkage::LinkageInfo *linkageInfo)
 #define  OFFSET_COUNTING_BRANCH_FROM_JITENTRY             36
 #endif
 
+#if defined(TR_HOST_ARM64)
+#define  OFFSET_REVERT_INTP_FIXED_PORTION                (-12-2*sizeof(intptr_t)) // @@
+#define  OFFSET_SAMPLING_PREPROLOGUE_FROM_STARTPC        (-(16+sizeof(intptr_t)))
+#define  OFFSET_SAMPLING_BRANCH_FROM_STARTPC             (-(12+sizeof(intptr_t)))
+#define  OFFSET_SAMPLING_METHODINFO_FROM_STARTPC         (-(8+sizeof(intptr_t)))
+#define  OFFSET_SAMPLING_PRESERVED_FROM_STARTPC          (-8)
+#define  OFFSET_COUNTING_BRANCH_FROM_JITENTRY            (9*ARM64_INSTRUCTION_LENGTH)
+
+inline uint32_t getJitEntryOffset(J9::PrivateLinkage::LinkageInfo *linkageInfo)
+   {
+   return linkageInfo->getReservedWord() & 0x0ffff;
+   }
+#endif
+
 /* Functions used by AOT runtime to fixup recompilation info for AOT */
 #if defined(TR_HOST_X86) || defined(TR_HOST_POWER) || defined(TR_HOST_S390) || defined(TR_HOST_ARM) || defined(TR_HOST_ARM64)
 uint32_t *getLinkageInfo(void * startPC);
