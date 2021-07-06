@@ -3523,6 +3523,138 @@ J9::ARM64::TreeEvaluator::ArrayCHKEvaluator(TR::Node *node, TR::CodeGenerator *c
    return VMarrayCheckEvaluator(node, cg);
    }
 
+void
+J9::ARM64::TreeEvaluator::genWrtbarForArrayCopy(TR::Node *node, TR::Register *srcObjReg, TR::Register *dstObjReg, TR::CodeGenerator *cg)
+   {
+   TR::Compilation *comp = cg->comp();
+   bool ageCheckIsNeeded;
+   bool cardMarkIsNeeded;
+   auto gcMode = TR::Compiler->om.writeBarrierType();
+
+   ageCheckIsNeeded = (gcMode == gc_modron_wrtbar_oldcheck ||
+                       gcMode == gc_modron_wrtbar_cardmark_and_oldcheck ||
+                       gcMode == gc_modron_wrtbar_always);
+   cardMarkIsNeeded = (gcMode == gc_modron_wrtbar_cardmark ||
+                       gcMode == gc_modron_wrtbar_cardmark_incremental);
+
+   if (!ageCheckIsNeeded && !cardMarkIsNeeded)
+      return;
+
+   if (ageCheckIsNeeded)
+      {
+      TR::Register *tmp1Reg = NULL;
+      TR::Register *tmp2Reg = NULL;
+      TR::RegisterDependencyConditions *deps;
+      TR::Instruction *gcPoint;
+      TR::LabelSymbol *doneLabel;
+
+      if (gcMode != gc_modron_wrtbar_always)
+         {
+         tmp1Reg = cg->allocateRegister();
+         tmp2Reg = cg->allocateRegister();
+         deps = new (cg->trHeapMemory()) TR::RegisterDependencyConditions(3, 3, cg->trMemory());
+         TR::addDependency(deps, tmp1Reg, TR::RealRegister::NoReg, TR_GPR, cg);
+         TR::addDependency(deps, tmp2Reg, TR::RealRegister::NoReg, TR_GPR, cg);
+         }
+      else
+         {
+         deps = new (cg->trHeapMemory()) TR::RegisterDependencyConditions(1, 1, cg->trMemory());
+         }
+
+      TR::addDependency(deps, dstObjReg, TR::RealRegister::x0, TR_GPR, cg);
+
+      TR::SymbolReference *wbRef = comp->getSymRefTab()->findOrCreateWriteBarrierBatchStoreSymbolRef(comp->getMethodSymbol());
+
+      if (gcMode != gc_modron_wrtbar_always)
+         {
+         doneLabel = generateLabelSymbol(cg);
+
+         TR::Register *metaReg = cg->getMethodMetaDataRegister();
+
+         // tmp1Reg = heapBaseForBarrierRange0
+         // tmp2Reg = dstObjReg - heapBaseForBarrierRange0
+         generateTrg1MemInstruction(cg, TR::InstOpCode::ldrimmx, node, tmp1Reg,
+                                    new (cg->trHeapMemory()) TR::MemoryReference(metaReg, offsetof(J9VMThread, heapBaseForBarrierRange0), cg));
+         generateTrg1Src2Instruction(cg, TR::InstOpCode::subx, node, tmp2Reg, dstObjReg, tmp1Reg);
+
+         // if (tmp2Reg >= heapSizeForBarrierRage0), object not in the tenured area
+         generateCompareInstruction(cg, node, tmp2Reg, tmp1Reg, true);
+         generateConditionalBranchInstruction(cg, TR::InstOpCode::b_cond, node, doneLabel, TR::CC_GE);
+         }
+
+      gcPoint = generateImmSymInstruction(cg, TR::InstOpCode::bl, node, reinterpret_cast<uintptr_t>(wbRef->getSymbol()->castToMethodSymbol()->getMethodAddress()),
+                                          new (cg->trHeapMemory()) TR::RegisterDependencyConditions((uint8_t) 0, 0, cg->trMemory()), wbRef, NULL);
+      cg->machine()->setLinkRegisterKilled(true);
+
+      if (gcMode != gc_modron_wrtbar_always)
+         generateLabelInstruction(cg, TR::InstOpCode::label, node, doneLabel, deps);
+
+      gcPoint->ARM64NeedsGCMap(cg, 0xFFFFFFFF);
+
+      if (tmp1Reg)
+         cg->stopUsingRegister(tmp1Reg);
+      if (tmp2Reg)
+         cg->stopUsingRegister(tmp2Reg);
+      }
+
+   if (!ageCheckIsNeeded && cardMarkIsNeeded)
+      {
+      if (!comp->getOptions()->realTimeGC())
+         {
+         TR::LabelSymbol *doneLabel = generateLabelSymbol(cg);
+
+         TR_ARM64ScratchRegisterManager *srm = cg->generateScratchRegisterManager();
+
+         TR::RegisterDependencyConditions *deps = new (cg->trHeapMemory()) TR::RegisterDependencyConditions(1, 1, cg->trMemory());
+         TR::addDependency(deps, dstObjReg, TR::RealRegister::NoReg, TR_GPR, cg);
+         srm->addScratchRegistersToDependencyList(deps);
+         VMCardCheckEvaluator(node, dstObjReg, srm, doneLabel, cg);
+         generateLabelInstruction(cg, TR::InstOpCode::label, node, doneLabel, deps);
+         srm->stopUsingRegisters();
+         }
+      else
+         {
+         TR_ASSERT(0, "genWrtbarForArrayCopy card marking not supported for RT");
+         }
+      }
+   }
+
+TR::Register *
+J9::ARM64::TreeEvaluator::arraycopyEvaluator(TR::Node *node, TR::CodeGenerator *cg)
+   {
+#ifdef OMR_GC_CONCURRENT_SCAVENGER
+   /*
+    * This version of arraycopyEvaluator is designed to handle the special case where read barriers are
+    * needed for field loads. At the time of writing, read barriers are used for Concurrent Scavenge GC.
+    * If there are no read barriers then the original implementation of arraycopyEvaluator can be used.
+    */
+   if (TR::Compiler->om.readBarrierType() == gc_modron_readbar_none ||
+       !node->chkNoArrayStoreCheckArrayCopy() ||
+       !node->isReferenceArrayCopy() ||
+       debug("noArrayCopy"))
+      {
+      return OMR::TreeEvaluatorConnector::arraycopyEvaluator(node, cg);
+      }
+
+   /*
+    * ToDo: Implement read barriers
+    */
+   TR::ILOpCodes opCode = node->getOpCodeValue();
+   TR::Node::recreate(node, TR::call);
+   TR::Register *trgReg = TR::TreeEvaluator::directCallEvaluator(node, cg);
+   TR::Node::recreate(node, opCode);
+   return trgReg;
+#else /* OMR_GC_CONCURRENT_SCAVENGER */
+   return OMR::TreeEvaluatorConnector::arraycopyEvaluator(node, cg);
+#endif /* OMR_GC_CONCURRENT_SCAVENGER */
+}
+
+void
+J9::ARM64::TreeEvaluator::genArrayCopyWithArrayStoreCHK(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   TR_UNIMPLEMENTED();
+   }
+
 static TR::Register *
 genCAS(TR::Node *node, TR::CodeGenerator *cg, TR_ARM64ScratchRegisterManager *srm, TR::Register *objReg, TR::Register *offsetReg, intptr_t offset, bool offsetInReg, TR::Register *oldVReg, TR::Register *newVReg,
       TR::LabelSymbol *doneLabel, int32_t oldValue, bool oldValueInReg, bool is64bit, bool casWithoutSync = false)
