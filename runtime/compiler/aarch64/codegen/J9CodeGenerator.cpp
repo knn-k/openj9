@@ -179,8 +179,7 @@ J9::ARM64::CodeGenerator::generateSwitchToInterpreterPrePrologue(TR::Instruction
    uintptr_t helperAddr = (uintptr_t)helperSymRef->getMethodAddress();
 
    // x8 must contain the saved LR; see Recompilation.s
-   // cannot use generateMovInstruction() here
-   cursor = new (self()->trHeapMemory()) TR::ARM64Trg1Src2Instruction(TR::InstOpCode::orrx, node, x8, xzr, lr, cursor, self());
+   cursor = generateMovInstruction(self(), node, x8, lr, true, cursor);
    cursor = self()->getLinkage()->saveParametersToStack(cursor);
    cursor = generateImmSymInstruction(self(), TR::InstOpCode::bl, node,
                                       (uintptr_t)revertToInterpreterSymRef->getMethodAddress(),

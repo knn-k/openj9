@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2019, 2020 IBM Corp. and others
+ * Copyright (c) 2019, 2021 IBM Corp. and others
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
@@ -64,7 +64,6 @@ TR::Instruction *TR_ARM64Recompilation::generatePrePrologue()
    TR::Machine *machine = cg()->machine();
    TR::Register *x8 = machine->getRealRegister(TR::RealRegister::x8);
    TR::Register *lr = machine->getRealRegister(TR::RealRegister::lr); // Link Register
-   TR::Register *xzr = machine->getRealRegister(TR::RealRegister::xzr); // zero register
    TR::Node *firstNode = comp()->getStartTree()->getNode();
    TR::SymbolReference *recompileMethodSymRef = cg()->symRefTab()->findOrCreateRuntimeHelper(TR_ARM64samplingRecompileMethod);
    TR_PersistentJittedBodyInfo *info = getJittedBodyInfo();
@@ -78,8 +77,7 @@ TR::Instruction *TR_ARM64Recompilation::generatePrePrologue()
    if (useSampling() && couldBeCompiledAgain())
       {
       // x8 must contain the saved LR; see Recompilation.spp
-      // cannot use generateMovInstruction() here
-      cursor = new (cg()->trHeapMemory()) TR::ARM64Trg1Src2Instruction(TR::InstOpCode::orrx, firstNode, x8, xzr, lr, cursor, cg());
+      cursor = generateMovInstruction(cg(), firstNode, x8, lr, true, cursor);
       cursor = generateImmSymInstruction(cg(), TR::InstOpCode::bl, firstNode,
                                          (uintptr_t)recompileMethodSymRef->getMethodAddress(),
                                          new (cg()->trHeapMemory()) TR::RegisterDependencyConditions(0, 0, cg()->trMemory()),
