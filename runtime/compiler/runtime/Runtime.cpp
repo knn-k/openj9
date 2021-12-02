@@ -991,7 +991,7 @@ void initializeCodeRuntimeHelperTable(J9JITConfig *jitConfig, char isSMP)
    SET(TR_methodHandleJ2IGlue,                     (void *)0, TR_Helper);
    SET(TR_methodHandleJ2I_unwrapper,               (void *)0, TR_Helper);
 
-#if (defined(TR_HOST_X86) || defined(TR_HOST_POWER) || defined(TR_HOST_S390)) && defined(J9VM_JIT_NEW_DUAL_HELPERS)
+#if (defined(TR_HOST_X86) || defined(TR_HOST_POWER) || defined(TR_HOST_S390) || defined(TR_HOST_ARM64)) && defined(J9VM_JIT_NEW_DUAL_HELPERS)
    SET(TR_checkCast,                  (void *)jitCheckCast,              TR_CHelper);
    SET(TR_checkCastForArrayStore,     (void *)jitCheckCastForArrayStore, TR_CHelper);
 #else
@@ -1008,7 +1008,7 @@ void initializeCodeRuntimeHelperTable(J9JITConfig *jitConfig, char isSMP)
 #endif
    SET(TR_induceOSRAtCurrentPC,       (void *)jitInduceOSRAtCurrentPC,   TR_Helper);
    SET(TR_induceOSRAtCurrentPCAndRecompile,       (void *)jitInduceOSRAtCurrentPCAndRecompile,   TR_Helper);
-#if (defined(TR_HOST_X86) || defined(TR_HOST_POWER) || defined(TR_HOST_S390)) && defined(J9VM_JIT_NEW_DUAL_HELPERS)
+#if (defined(TR_HOST_X86) || defined(TR_HOST_POWER) || defined(TR_HOST_S390) /* || defined(TR_HOST_ARM64) */) && defined(J9VM_JIT_NEW_DUAL_HELPERS)
    SET(TR_monitorEntry,               (void *)jitMonitorEntry,           TR_CHelper);
    SET(TR_methodMonitorEntry,         (void *)jitMethodMonitorEntry,     TR_CHelper);
    SET(TR_monitorExit,                (void *)jitMonitorExit,            TR_CHelper);
@@ -1050,7 +1050,7 @@ void initializeCodeRuntimeHelperTable(J9JITConfig *jitConfig, char isSMP)
 #endif
 #endif
 
-#if (defined(TR_HOST_X86) || defined(TR_HOST_POWER) || defined(TR_HOST_S390)) && defined(J9VM_JIT_NEW_DUAL_HELPERS)
+#if (defined(TR_HOST_X86) || defined(TR_HOST_POWER) || defined(TR_HOST_S390) || defined(TR_HOST_ARM64)) && defined(J9VM_JIT_NEW_DUAL_HELPERS)
    SET(TR_newObject,                  (void *)jitNewObject,              TR_CHelper);
    SET(TR_newArray,                   (void *)jitNewArray,               TR_CHelper);
    SET(TR_aNewArray,                  (void *)jitANewArray,              TR_CHelper);
@@ -1094,7 +1094,7 @@ void initializeCodeRuntimeHelperTable(J9JITConfig *jitConfig, char isSMP)
    SET(TR_arrayBoundsCheck,           (void *)jitThrowArrayIndexOutOfBounds,         TR_Helper);
    SET(TR_divCheck,                   (void *)jitThrowArithmeticException,           TR_Helper);
    SET(TR_arrayStoreException,        (void *)jitThrowArrayStoreException,           TR_Helper);
-#if (defined(TR_HOST_X86) || defined(TR_HOST_POWER) || defined(TR_HOST_S390)) && defined(J9VM_JIT_NEW_DUAL_HELPERS)
+#if (defined(TR_HOST_X86) || defined(TR_HOST_POWER) || defined(TR_HOST_S390) || defined(TR_HOST_ARM64)) && defined(J9VM_JIT_NEW_DUAL_HELPERS)
    SET(TR_typeCheckArrayStore,        (void *)jitTypeCheckArrayStoreWithNullCheck,   TR_CHelper);
 #else
    SET(TR_typeCheckArrayStore,        (void *)jitTypeCheckArrayStoreWithNullCheck,   TR_Helper);
