@@ -1,5 +1,5 @@
 ################################################################################
-# Copyright (c) 2017, 2021 IBM Corp. and others
+# Copyright (c) 2017, 2022 IBM Corp. and others
 #
 # This program and the accompanying materials are made available under
 # the terms of the Eclipse Public License 2.0 which accompanies this
@@ -208,17 +208,32 @@ elseif(OMR_ARCH_ARM AND OMR_OS_LINUX)
 			arm/sysv.S
 			arm/trampoline.S
 	)
-elseif(OMR_ARCH_AARCH64 AND (OMR_OS_LINUX OR OMR_OS_OSX))
-	target_include_directories(ffi
-		PUBLIC
-			aarch64
-			preconf/xr64
-	)
-	target_sources(ffi
-		PRIVATE
-			aarch64/ffi.c
-			aarch64/sysv.S
-	)
+elseif(OMR_ARCH_AARCH64)
+	if(OMR_OS_LINUX)
+		target_include_directories(ffi
+			PUBLIC
+				aarch64
+				preconf/xr64
+		)
+		target_sources(ffi
+			PRIVATE
+				aarch64/ffi.c
+				aarch64/sysv.S
+		)
+	elseif(OMR_OS_OSX)
+		target_include_directories(ffi
+			PUBLIC
+				aarch64_3.4.2
+				preconf/or64
+		)
+		target_sources(ffi
+			PRIVATE
+				aarch64_3.4.2/ffi.c
+				aarch64_3.4.2/sysv.S
+		)
+	else()
+		message(SEND_ERROR "Unsupported platform")
+	endif()
 
 elseif(OMR_ARCH_RISCV AND OMR_OS_LINUX)
 	target_include_directories(ffi PUBLIC riscv)
