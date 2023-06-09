@@ -28,8 +28,6 @@
 TR_ARM64Recompilation::TR_ARM64Recompilation(TR::Compilation * comp)
    : TR::Recompilation(comp)
    {
-   _countingSupported = true;
-
    setupMethodInfo();
    }
 
