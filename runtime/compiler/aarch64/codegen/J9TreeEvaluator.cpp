@@ -2595,7 +2595,6 @@ template<typename T> const T clamp(const int &value, const T &low, const T &high
  * @brief Generates instructions for allocating heap for new/newarray/anewarray
  *        The limitation of the current implementation:
  *          - supports `new` only
- *          - does not support dual TLH
  *          - does not support realtimeGC
  *
  * @param[in] node:          node
@@ -2643,11 +2642,24 @@ static void genHeapAlloc(TR::Node *node, TR::CodeGenerator *cg, bool isVariableL
     TR::Compilation *comp = cg->comp();
     TR::Register *metaReg = cg->getMethodMetaDataRegister();
 
+    bool useDualTLH = !comp->getOption(TR_DisableDualTLH);
+    size_t heapAlloc_offset = offsetof(J9VMThread, heapAlloc);
+    size_t heapTop_offset = offsetof(J9VMThread, heapTop);
+
+#if defined(J9VM_GC_NON_ZERO_TLH)
+    if (useDualTLH && node->canSkipZeroInitialization()) {
+        heapAlloc_offset = offsetof(J9VMThread, nonZeroHeapAlloc);
+        heapTop_offset = offsetof(J9VMThread, nonZeroHeapTop);
+    }
+#endif
+
     uint32_t maxSafeSize = cg->getMaxObjectSizeGuaranteedNotToOverflow();
     bool isTooSmallToPrefetch = false;
 
     static_assert(offsetof(J9VMThread, heapAlloc) < 32760, "Expecting offset to heapAlloc fits in imm12");
     static_assert(offsetof(J9VMThread, heapTop) < 32760, "Expecting offset to heapTop fits in imm12");
+    static_assert(offsetof(J9VMThread, nonZeroHeapAlloc) < 32760, "Expecting offset to nonZeroHeapAlloc fits in imm12");
+    static_assert(offsetof(J9VMThread, nonZeroHeapTop) < 32760, "Expecting offset to nonZeroHeapTop fits in imm12");
 
     if (isVariableLen) {
         /*
@@ -2694,7 +2706,7 @@ static void genHeapAlloc(TR::Node *node, TR::CodeGenerator *cg, bool isVariableL
         Inst_Trg1Src1Imm(cg, OP::ubfmx, node, tempReg, lengthReg, 31); // uxtw
 
         // Load the base of the next available heap storage.
-        Inst_Trg1Mem(cg, OP::ldrimmx, node, resultReg, MRef_disp(cg, metaReg, offsetof(J9VMThread, heapAlloc)));
+        Inst_Trg1Mem(cg, OP::ldrimmx, node, resultReg, MRef_disp(cg, metaReg, heapAlloc_offset));
 
         // calculate variable size, rounding up if necessary to a intptr_t multiple boundary
         //
@@ -2746,7 +2758,7 @@ static void genHeapAlloc(TR::Node *node, TR::CodeGenerator *cg, bool isVariableL
         }
 
         // Load the heap top
-        Inst_Trg1Mem(cg, OP::ldrimmx, node, heapTopReg, MRef_disp(cg, metaReg, offsetof(J9VMThread, heapTop)));
+        Inst_Trg1Mem(cg, OP::ldrimmx, node, heapTopReg, MRef_disp(cg, metaReg, heapTop_offset));
         Inst_Trg1Src2(cg, OP::addx, node, tempReg, resultReg, dataSizeReg);
 
     } else {
@@ -2768,9 +2780,9 @@ static void genHeapAlloc(TR::Node *node, TR::CodeGenerator *cg, bool isVariableL
          */
 
         // Load the base of the next available heap storage.
-        Inst_Trg1Mem(cg, OP::ldrimmx, node, resultReg, MRef_disp(cg, metaReg, offsetof(J9VMThread, heapAlloc)));
+        Inst_Trg1Mem(cg, OP::ldrimmx, node, resultReg, MRef_disp(cg, metaReg, heapAlloc_offset));
         // Load the heap top
-        Inst_Trg1Mem(cg, OP::ldrimmx, node, heapTopReg, MRef_disp(cg, metaReg, offsetof(J9VMThread, heapTop)));
+        Inst_Trg1Mem(cg, OP::ldrimmx, node, heapTopReg, MRef_disp(cg, metaReg, heapAlloc_offset));
 
         // Calculate the after-allocation heapAlloc: if the size is huge,
         // we need to check address wrap-around also. This is unsigned
@@ -2809,7 +2821,7 @@ static void genHeapAlloc(TR::Node *node, TR::CodeGenerator *cg, bool isVariableL
         }
     }
     // Done, write back to heapAlloc here.
-    Inst_MemSrc1(cg, OP::strimmx, node, MRef_disp(cg, metaReg, offsetof(J9VMThread, heapAlloc)), tempReg);
+    Inst_MemSrc1(cg, OP::strimmx, node, MRef_disp(cg, metaReg, heapAlloc_offset), tempReg);
 }
 
 /**
