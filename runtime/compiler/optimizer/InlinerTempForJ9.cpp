@@ -5552,6 +5552,12 @@ TR_J9InlinerPolicy::supressInliningRecognizedInitialCallee(TR_CallSite* callsite
             return true;
             }
          break;
+      case TR::java_lang_StringUTF16_compress_charArray:
+         if (comp->cg()->getSupportsInlineStringUTF16CompressCharArray())
+            {
+            return true;
+            }
+         break;
       default:
          break;
       }
