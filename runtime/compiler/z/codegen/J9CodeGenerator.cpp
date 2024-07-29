@@ -44,6 +44,7 @@
 #include "il/Node_inlines.hpp"
 #include "z/codegen/J9SystemLinkageLinux.hpp"
 #include "z/codegen/J9SystemLinkagezOS.hpp"
+#include "z/codegen/S390Evaluator.hpp"
 #include "z/codegen/S390GenerateInstructions.hpp"
 #include "z/codegen/S390Recompilation.hpp"
 #include "z/codegen/S390Register.hpp"
@@ -55,6 +56,7 @@ extern void TEMPORARY_initJ9S390TreeEvaluatorTable(TR::CodeGenerator *cg);
 
 //Forward declarations
 bool nodeMightClobberAccumulatorBeforeUse(TR::Node *);
+static TR::Register *inlineStringUTF16compressCharArray(TR::Node *node, TR::CodeGenerator *cg);
 
 J9::Z::CodeGenerator::CodeGenerator(TR::Compilation *comp) :
       J9::CodeGenerator(comp)
@@ -133,6 +135,16 @@ J9::Z::CodeGenerator::initialize()
          !disableInlineVectorizedMismatch)
       {
       cg->setSupportsInlineVectorizedMismatch();
+      }
+
+   static bool enableInlineStringUTF16CompressCharArray = feGetEnv("TR_enableInlineStringUTF16CompressCharArray") != NULL;
+   if (!TR::Compiler->om.canGenerateArraylets() &&
+#if defined(J9VM_GC_ENABLE_SPARSE_HEAP_ALLOCATION)
+       !TR::Compiler->om.isOffHeapAllocationEnabled() &&
+#endif /* J9VM_GC_ENABLE_SPARSE_HEAP_ALLOCATION */
+       enableInlineStringUTF16CompressCharArray)
+      {
+      cg->setSupportsInlineStringUTF16CompressCharArray();
       }
 
    // Let's turn this on.  There is more work needed in the opt
@@ -3991,6 +4003,14 @@ J9::Z::CodeGenerator::inlineDirectCall(
             }
          break;
 
+      case TR::java_lang_StringUTF16_compress_charArray:
+         if (cg->getSupportsInlineStringUTF16CompressCharArray())
+            {
+            resultReg = inlineStringUTF16compressCharArray(node, cg);
+            return resultReg != NULL;
+            }
+         break;
+
       default:
          break;
 
@@ -4148,4 +4168,305 @@ bool
 J9::Z::CodeGenerator::supportsTrapsInTMRegion()
    {
    return self()->comp()->target().isZOS();
+   }
+
+
+static TR::Register *inlineStringUTF16compressCharArray(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   TR_ASSERT_FATAL(!TR::Compiler->om.canGenerateArraylets(), "StringUTF16.compress intrinsic is not supported with arraylets");
+   TR_ASSERT_FATAL_WITH_NODE(node, node->getNumChildren() == 5, "Wrong number of children in inlineStringUTF16compressCharArray");
+
+   //
+   // tree looks as follows:
+   // icall StringUTF16.compress([CI[BII)I
+   //    src array (input)
+   //    src offset
+   //    dst array (output)
+   //    dst offset
+   //    length
+   //
+   // Returns length when successful, 0 otherwise
+   //
+
+   TR::Compilation* comp = cg->comp();
+
+   // Create the necessary registers
+   TR::Register* input  = cg->gprClobberEvaluate(node->getChild(0));
+   TR::Register* output = cg->gprClobberEvaluate(node->getChild(2));
+
+   TR::Register* inputLen;
+   TR::Register* inputLen16     = cg->allocateRegister();
+   TR::Register* inputLenMinus1 = inputLen16;
+
+   // Number of characters currently translated
+   TR::Register* translated = cg->allocateRegister();
+
+   TR::Register* resultReg = cg->allocateRegister();
+
+   TR::Node* inputLenNode = node->getChild(4);
+
+   TR::Node *srcOffsetNode = node->getChild(1);
+   TR::Register* srcOffsetReg = cg->gprClobberEvaluate(srcOffsetNode);
+   TR::Node *dstOffsetNode = node->getChild(3);
+   TR::Register* dstOffsetReg = cg->gprClobberEvaluate(dstOffsetNode);
+
+   // Add header size
+   generateRXInstruction(cg, TR::InstOpCode::getLoadAddressOpCode(), node, input, generateS390MemoryReference(input, TR::Compiler->om.contiguousArrayHeaderSizeInBytes(), cg));
+   generateRXInstruction(cg, TR::InstOpCode::getLoadAddressOpCode(), node, output, generateS390MemoryReference(output, TR::Compiler->om.contiguousArrayHeaderSizeInBytes(), cg));
+
+   // Add offsets
+   generateRSInstruction(cg, TR::InstOpCode::getShiftLeftLogicalSingleOpCode(), node, srcOffsetReg, srcOffsetReg, 1);
+   generateRXInstruction(cg, TR::InstOpCode::getLoadAddressOpCode(), node, input, generateS390MemoryReference(input, srcOffsetReg, 0, cg));
+   generateRXInstruction(cg, TR::InstOpCode::getLoadAddressOpCode(), node, output, generateS390MemoryReference(output, dstOffsetReg, 0, cg));
+
+   // Optimize the constant length case
+   bool isLenConstant = inputLenNode->getOpCode().isLoadConst() && performTransformation(comp, "O^O [%p] Reduce input length to constant.\n", inputLenNode);
+
+   // Initialize the number of translated characters to 0
+   generateRREInstruction(cg, TR::InstOpCode::getXORRegOpCode(), node, translated, translated);
+
+   if (isLenConstant)
+      {
+      inputLen = cg->allocateRegister();
+
+      generateLoad32BitConstant(cg, inputLenNode, (getIntegralValue(inputLenNode)), inputLen, true);
+      generateLoad32BitConstant(cg, inputLenNode, (getIntegralValue(inputLenNode) >> 4) << 4, inputLen16, true);
+      }
+   else
+      {
+      inputLen = cg->gprClobberEvaluate(inputLenNode, true);
+
+      // Sign extend the value if needed
+      if (cg->comp()->target().is64Bit() && !(inputLenNode->getOpCode().isLong()))
+         {
+         generateRRInstruction(cg, TR::InstOpCode::getLoadRegWidenOpCode(), node, inputLen,   inputLen);
+         generateRRInstruction(cg, TR::InstOpCode::getLoadRegWidenOpCode(), node, inputLen16, inputLen);
+         }
+      else
+         {
+         generateRRInstruction(cg, TR::InstOpCode::getLoadRegOpCode(), node, inputLen16, inputLen);
+         }
+
+      // Truncate the 4 right most bits
+      generateRIInstruction(cg, TR::InstOpCode::NILL, node, inputLen16, static_cast <int16_t> (0xFFF0));
+      }
+
+   // Move from inputlen to resultReg
+   generateRRInstruction(cg, TR::InstOpCode::LGR, node, resultReg, inputLen);
+
+   // Create the necessary labels
+   TR::LabelSymbol * processMultiple16Chars    = generateLabelSymbol(cg);
+   TR::LabelSymbol * processMultiple16CharsEnd = generateLabelSymbol(cg);
+
+   TR::LabelSymbol * processUnder16Chars    = generateLabelSymbol(cg);
+   TR::LabelSymbol * processUnder16CharsEnd = generateLabelSymbol(cg);
+
+   TR::LabelSymbol * processUnder8Chars    = generateLabelSymbol(cg);
+   TR::LabelSymbol * processUnder8CharsEnd = generateLabelSymbol(cg);
+
+   TR::LabelSymbol * processSaturatedInput  = generateLabelSymbol(cg);
+   TR::LabelSymbol * processUnSaturated     = generateLabelSymbol(cg);
+   TR::LabelSymbol * cFlowRegionEnd         = generateLabelSymbol(cg);
+
+   // Create the necessary vector registers
+   TR::Register* vInput1    = cg->allocateRegister(TR_VRF); // 1st 16 bytes of input (8 chars)
+   TR::Register* vInput2    = cg->allocateRegister(TR_VRF); // 2nd 16 bytes of input (8 chars)
+   TR::Register* vOutput    = cg->allocateRegister(TR_VRF); // Output buffer
+   TR::Register* vSaturated = cg->allocateRegister(TR_VRF); // Track index of first saturated char
+
+   TR::Register* vRange        = cg->allocateRegister(TR_VRF);
+   TR::Register* vRangeControl = cg->allocateRegister(TR_VRF);
+
+   uint32_t saturatedRange        = 255;
+   uint16_t saturatedRangeControl = 0x2000; // > comparison
+
+   // Replicate the limit character and comparison controller into vector registers
+   generateVRIaInstruction(cg, TR::InstOpCode::VREPI, node, vRange,        saturatedRange,        1);
+   generateVRIaInstruction(cg, TR::InstOpCode::VREPI, node, vRangeControl, saturatedRangeControl, 1);
+
+   // Branch to the end if there are no more multiples of 16 chars left to process
+   generateS390CompareAndBranchInstruction(cg, TR::InstOpCode::getCmpLogicalOpCode(), node, inputLen16, 0, TR::InstOpCode::COND_MASK8, processMultiple16CharsEnd, false, false);
+
+   // ----------------- Incoming branch -----------------
+
+   generateS390LabelInstruction(cg, TR::InstOpCode::label, node, processMultiple16Chars);
+   processMultiple16Chars->setStartInternalControlFlow();
+
+   // Load 32 bytes (16 chars) into vector registers and check for saturation
+   generateVRSaInstruction(cg, TR::InstOpCode::VLM, node, vInput1, vInput2, generateS390MemoryReference(input, 0, cg), 0);
+
+   // Check for vector saturation and branch to copy the unsaturated bytes
+   generateVRRdInstruction(cg, TR::InstOpCode::VSTRC, node, vSaturated, vInput1, vRange, vRangeControl, 0x1, 1);
+   generateS390BranchInstruction(cg, TR::InstOpCode::BRC, TR::InstOpCode::COND_CC1, node, processSaturatedInput);
+   generateVRRdInstruction(cg, TR::InstOpCode::VSTRC, node, vSaturated, vInput2, vRange, vRangeControl, 0x1, 1);
+   generateS390BranchInstruction(cg, TR::InstOpCode::BRC, TR::InstOpCode::COND_CC1, node, processSaturatedInput);
+
+   // Pack the 2 byte characters into 1 byte
+   generateVRRbInstruction(cg, TR::InstOpCode::VPKLS, node, vOutput, vInput1, vInput2, 0x0, 1);
+
+   // Store the result and advance the input pointer
+   generateVRXInstruction(cg, TR::InstOpCode::VST, node, vOutput, generateS390MemoryReference(output, translated, 0, cg));
+
+   generateRXInstruction(cg, TR::InstOpCode::getLoadAddressOpCode(), node, input, generateS390MemoryReference(input, 32, cg));
+   generateRXInstruction(cg, TR::InstOpCode::getLoadAddressOpCode(), node, translated, generateS390MemoryReference(translated, 16, cg));
+
+   // ed : perf : Use BRXLE and get rid of the LA translated
+   // Loop back if there is at least 16 chars left to process
+   generateS390CompareAndBranchInstruction(cg, TR::InstOpCode::getCmpRegOpCode(), node, translated, inputLen16, TR::InstOpCode::COND_BL, processMultiple16Chars, false, false);
+
+   generateS390LabelInstruction(cg, TR::InstOpCode::label, node, processMultiple16CharsEnd);
+   processMultiple16CharsEnd->setEndInternalControlFlow();
+
+   // ----------------- Incoming branch -----------------
+
+   generateS390LabelInstruction(cg, TR::InstOpCode::label, node, processUnder16Chars);
+   processUnder16Chars->setStartInternalControlFlow();
+
+   // Calculate the number of residue chars available
+   generateRRInstruction(cg, TR::InstOpCode::getSubstractRegOpCode(), node, inputLen, translated);
+
+   // Branch to the end if there is no residue
+   generateS390BranchInstruction(cg, TR::InstOpCode::BRC, TR::InstOpCode::COND_CC0, node, cFlowRegionEnd);
+
+   // VLL and VSTL work on indices so we must subtract 1
+   generateRIEInstruction(cg, TR::InstOpCode::getAddLogicalRegRegImmediateOpCode(), node, inputLenMinus1, inputLen, -1);
+
+   generateS390CompareAndBranchInstruction(cg, TR::InstOpCode::getCmpLogicalOpCode(), node, inputLenMinus1, 7, TR::InstOpCode::COND_CC2, processUnder8CharsEnd, false, false);
+
+   // ----------------- Incoming branch -----------------
+
+   generateS390LabelInstruction(cg, TR::InstOpCode::label, node, processUnder8Chars);
+   processUnder8Chars->setStartInternalControlFlow();
+
+   // Zero out the input register to avoid invalid VSTRC result
+   generateVRIaInstruction(cg, TR::InstOpCode::VGBM, node, vInput1, 0, 0 /*unused*/);
+
+   // Convert input length in number of characters to number of bytes
+   generateRSInstruction(cg, TR::InstOpCode::getShiftLeftLogicalSingleOpCode(), node, inputLenMinus1, inputLenMinus1, 1);
+
+   // (x - 1) * 2 = 2x - 2 but we want 2x - 1
+   generateRIInstruction(cg, TR::InstOpCode::getAddHalfWordImmOpCode(), node, inputLenMinus1, 1);
+
+   // Load residue bytes and check for saturation
+   generateVRSbInstruction(cg, TR::InstOpCode::VLL, node, vInput1, inputLenMinus1, generateS390MemoryReference(input, 0, cg));
+
+   // Check for vector saturation and branch to copy the unsaturated bytes
+   generateVRRdInstruction(cg, TR::InstOpCode::VSTRC, node, vSaturated, vInput1, vRange, vRangeControl, 0x1, 1);
+   generateS390BranchInstruction(cg, TR::InstOpCode::BRC, TR::InstOpCode::COND_CC1, node, processSaturatedInput);
+
+   // Convert back
+   generateRSInstruction(cg, TR::InstOpCode::getShiftRightLogicalSingleOpCode(), node, inputLenMinus1, inputLenMinus1, 1);
+
+   generateS390BranchInstruction(cg, TR::InstOpCode::BRC, TR::InstOpCode::COND_MASK15, node, processUnSaturated);
+
+   // ----------------- Incoming branch -----------------
+
+   generateS390LabelInstruction(cg, TR::InstOpCode::label, node, processUnder8CharsEnd);
+   processUnder8CharsEnd->setEndInternalControlFlow();
+
+   // Load first 8 chars and check for saturation
+   generateVRXInstruction(cg, TR::InstOpCode::VL, node, vInput1, generateS390MemoryReference(input, 0, cg));
+
+   // Check for vector saturation and branch to copy the unsaturated bytes
+   generateVRRdInstruction(cg, TR::InstOpCode::VSTRC, node, vSaturated, vInput1, vRange, vRangeControl, 0x1, 1);
+   generateS390BranchInstruction(cg, TR::InstOpCode::BRC, TR::InstOpCode::COND_CC1, node, processSaturatedInput);
+
+   // Subtract 8 from total residue count
+   generateRIInstruction(cg, TR::InstOpCode::getAddHalfWordImmOpCode(), node, inputLenMinus1, -8);
+
+   // Zero out the input register to avoid invalid VSTRC result
+   generateVRIaInstruction(cg, TR::InstOpCode::VGBM, node, vInput2, 0, 0 /*unused*/);
+
+   // Convert input length in number of characters to number of bytes
+   generateRSInstruction(cg, TR::InstOpCode::getShiftLeftLogicalSingleOpCode(), node, inputLenMinus1, inputLenMinus1, 1);
+
+   // (x - 1) * 2 = 2x - 2 but we want 2x - 1
+   generateRXInstruction(cg, TR::InstOpCode::getLoadAddressOpCode(), node, inputLenMinus1,  generateS390MemoryReference(inputLenMinus1 , 1, cg));
+
+   // Load residue bytes and check for saturation
+   generateVRSbInstruction(cg, TR::InstOpCode::VLL, node, vInput2, inputLenMinus1, generateS390MemoryReference(input, 16, cg));
+
+   // Check for vector saturation and branch to copy the unsaturated bytes
+   generateVRRdInstruction(cg, TR::InstOpCode::VSTRC, node, vSaturated, vInput2, vRange, vRangeControl, 0x1, 1);
+   generateS390BranchInstruction(cg, TR::InstOpCode::BRC, TR::InstOpCode::COND_CC1, node, processSaturatedInput);
+
+   // Convert back
+   generateRSInstruction(cg, TR::InstOpCode::getShiftRightLogicalSingleOpCode(), node, inputLenMinus1, inputLenMinus1, 1);
+
+   // Add 8 to the total residue count
+   generateRIInstruction (cg, TR::InstOpCode::getAddHalfWordImmOpCode(), node, inputLenMinus1, 8);
+
+   generateS390BranchInstruction(cg, TR::InstOpCode::BRC, TR::InstOpCode::COND_MASK15, node, processUnSaturated);
+
+   generateS390LabelInstruction(cg, TR::InstOpCode::label, node, processUnder16CharsEnd);
+   processUnder16CharsEnd->setEndInternalControlFlow();
+
+   // ----------------- Incoming branch -----------------
+
+   generateS390LabelInstruction(cg, TR::InstOpCode::label, node, processSaturatedInput);
+
+   // Set the result to zero
+   generateRREInstruction(cg, TR::InstOpCode::getXORRegOpCode(), node, resultReg, resultReg);
+
+   // ----------------- Incoming branch -----------------
+
+   generateS390LabelInstruction(cg, TR::InstOpCode::label, node, processUnSaturated);
+   processUnSaturated->setStartInternalControlFlow();
+
+   // Pack the chars regardless of saturation
+   generateVRRbInstruction(cg, TR::InstOpCode::VPKLS, node, vOutput, vInput1, vInput2, 0x0, 1);
+
+   // VSTL instruction can only handle memory references of type D(B), so increment the base output address
+   generateRRInstruction (cg, TR::InstOpCode::getAddRegOpCode(), node, output, translated);
+
+   // Copy only the unsaturated results using the index we calculated earlier
+   generateVRSbInstruction(cg, TR::InstOpCode::VSTL, node, vOutput, inputLenMinus1, generateS390MemoryReference(output, 0, cg), 0);
+
+   // Set up the proper register dependencies
+   TR::RegisterDependencyConditions* dependencies = new (cg->trHeapMemory()) TR::RegisterDependencyConditions(0, 11, cg);
+
+   dependencies->addPostCondition(input,      TR::RealRegister::AssignAny);
+   dependencies->addPostCondition(inputLen,   TR::RealRegister::AssignAny);
+   dependencies->addPostCondition(inputLen16, TR::RealRegister::AssignAny);
+   dependencies->addPostCondition(output,     TR::RealRegister::AssignAny);
+   dependencies->addPostCondition(translated, TR::RealRegister::AssignAny);
+   dependencies->addPostCondition(resultReg,  TR::RealRegister::AssignAny);
+
+   // These two need to be adjacent since we use VLM
+   dependencies->addPostCondition(vInput1,       TR::RealRegister::VRF16);
+   dependencies->addPostCondition(vInput2,       TR::RealRegister::VRF17);
+   dependencies->addPostCondition(vOutput,       TR::RealRegister::AssignAny);
+   dependencies->addPostCondition(vSaturated,    TR::RealRegister::AssignAny);
+   dependencies->addPostCondition(vRange,        TR::RealRegister::AssignAny);
+   dependencies->addPostCondition(vRangeControl, TR::RealRegister::AssignAny);
+
+   // ----------------- Incoming branch -----------------
+
+   generateS390LabelInstruction(cg, TR::InstOpCode::label, node, cFlowRegionEnd, dependencies);
+   cFlowRegionEnd->setEndInternalControlFlow();
+
+   // Cleanup nodes before returning
+   cg->decReferenceCount(node->getChild(0));
+   cg->decReferenceCount(node->getChild(1));
+   cg->decReferenceCount(node->getChild(2));
+   cg->decReferenceCount(node->getChild(3));
+   cg->decReferenceCount(node->getChild(4));
+
+   // Cleanup registers before returning
+   cg->stopUsingRegister(output);
+   cg->stopUsingRegister(input);
+   cg->stopUsingRegister(inputLen);
+   cg->stopUsingRegister(inputLen16);
+   cg->stopUsingRegister(translated);
+   cg->stopUsingRegister(srcOffsetReg);
+   cg->stopUsingRegister(dstOffsetReg);
+
+   cg->stopUsingRegister(vInput1);
+   cg->stopUsingRegister(vInput2);
+   cg->stopUsingRegister(vOutput);
+   cg->stopUsingRegister(vSaturated);
+   cg->stopUsingRegister(vRange);
+   cg->stopUsingRegister(vRangeControl);
+
+   return node->setRegister(resultReg);
    }
