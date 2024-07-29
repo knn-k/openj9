@@ -6756,6 +6756,54 @@ static TR::Register *inlineStringLatin1Inflate(TR::Node *node, TR::CodeGenerator
    return NULL;
    }
 
+static TR::Register *inlineStringUTF16compressCharArray(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   TR::RegisterDependencyConditions *deps = new (cg->trHeapMemory()) TR::RegisterDependencyConditions(9, 9, cg->trMemory());
+
+   TR::Node *srcArrayNode  = node->getChild(0);
+   TR::Node *srcOffsetNode = node->getChild(1);
+   TR::Node *dstArrayNode  = node->getChild(2);
+   TR::Node *dstOffsetNode = node->getChild(3);
+   TR::Node *lengthNode    = node->getChild(4);
+
+   // Registers for arguments
+   TR::Register *srcArrayReg  = cg->evaluate(srcArrayNode);
+   TR::Register *srcOffsetReg = cg->evaluate(srcOffsetNode);
+   TR::Register *dstArrayReg  = cg->evaluate(dstArrayNode);
+   TR::Register *dstOffsetReg = cg->evaluate(dstOffsetNode);
+   TR::Register *lengthReg    = cg->evaluate(lengthNode);
+   TR::Register *srcReg = cg->allocateRegister();
+   TR::Register *dstReg = cg->allocateRegister();
+
+   TR::addDependency(deps, srcReg, TR::RealRegister::x0, TR_GPR, cg);
+   TR::addDependency(deps, srcOffsetReg, TR::RealRegister::x1, TR_GPR, cg);
+   TR::addDependency(deps, dstReg, TR::RealRegister::x2, TR_GPR, cg);
+   TR::addDependency(deps, dstOffsetReg, TR::RealRegister::x3, TR_GPR, cg);
+   TR::addDependency(deps, lengthReg, TR::RealRegister::x4, TR_GPR, cg);
+   TR::addDependency(deps, NULL, TR::RealRegister::x5, TR_GPR, cg);
+   TR::addDependency(deps, NULL, TR::RealRegister::v0, TR_FPR, cg);
+   TR::addDependency(deps, NULL, TR::RealRegister::v1, TR_FPR, cg);
+   TR::addDependency(deps, NULL, TR::RealRegister::v2, TR_FPR, cg);
+
+   // Registers destroyed in the helper
+   TR::Register *x5Reg = deps->searchPostConditionRegister(TR::RealRegister::x5);
+   TR::Register *v0Reg = deps->searchPostConditionRegister(TR::RealRegister::v0);
+   TR::Register *v1Reg = deps->searchPostConditionRegister(TR::RealRegister::v1);
+   TR::Register *v2Reg = deps->searchPostConditionRegister(TR::RealRegister::v2);
+
+   // adjust header
+   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addimmx, node, srcReg, srcArrayReg, 8);
+   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addimmx, node, dstReg, dstArrayReg, 8);
+
+   // @@ Need checks for reference count
+
+   TR::SymbolReference *helperSym = cg->symRefTab()->findOrCreateRuntimeHelper(TR_ARM64StringUTF16compressCharArray);
+   generateImmSymInstruction(cg, TR::InstOpCode::bl, node, reinterpret_cast<uintptr_t>(helperSym->getMethodAddress()), deps, helperSym, NULL);
+   cg->machine()->setLinkRegisterKilled(true);
+
+   return lengthReg;
+   }
+
 bool
 J9::ARM64::CodeGenerator::inlineDirectCall(TR::Node *node, TR::Register *&resultReg)
    {
@@ -6876,6 +6924,11 @@ J9::ARM64::CodeGenerator::inlineDirectCall(TR::Node *node, TR::Register *&result
                return true;
                }
             break;
+
+         case TR::java_lang_StringUTF16_compress_charArray:
+            // @@ add check for getSupports
+            resultReg = inlineStringUTF16compressCharArray(node, cg);
+            return true;
 
          case TR::sun_misc_Unsafe_compareAndSwapInt_jlObjectJII_Z:
             {

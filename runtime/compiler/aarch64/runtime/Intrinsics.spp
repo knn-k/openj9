@@ -1,0 +1,102 @@
+/*******************************************************************************
+ * Copyright IBM Corp. and others 2024
+ *
+ * This program and the accompanying materials are made available under
+ * the terms of the Eclipse Public License 2.0 which accompanies this
+ * distribution and is available at https://www.eclipse.org/legal/epl-2.0/
+ * or the Apache License, Version 2.0 which accompanies this distribution and
+ * is available at https://www.apache.org/licenses/LICENSE-2.0.
+ *
+ * This Source Code may also be made available under the following
+ * Secondary Licenses when the conditions for such availability set
+ * forth in the Eclipse Public License, v. 2.0 are satisfied: GNU
+ * General Public License, version 2 with the GNU Classpath
+ * Exception [1] and GNU General Public License, version 2 with the
+ * OpenJDK Assembly Exception [2].
+ *
+ * [1] https://www.gnu.org/software/classpath/license.html
+ * [2] https://openjdk.org/legal/assembly-exception.html
+ *
+ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
+ *******************************************************************************/
+
+#include "aarch64/runtime/arm64asmdefs.inc"
+
+	.globl	FUNC_LABEL(stringUTF16compressCharArray)
+
+	.text
+	.align	2
+
+//
+// StringUTF16.compress([CI[BII)I
+// in:
+//   x0: srcAddress (char[])
+//   x1: srcOffset
+//   x2: dstAddress (byte[])
+//   x3: dstOffset
+//   x4: length (# of elements)
+// out:
+//   x0: length
+// trash:
+//   x5, v0, v1, v2
+// No checks for array index
+//
+FUNC_LABEL(stringUTF16compressCharArray):
+	add	x0, x0, x1, lsl #1
+	add	x2, x2, x3
+	cmp	w4, #16
+	b.cc	compress8
+	lsr	w5, w4, #4
+compressLoop:
+	ldp	q0, q1, [x0], #32
+	uzp2	v2.16b, v0.16b, v1.16b
+	mov	x1, v2.D[0]
+	mov	x3, v2.D[1]
+	orr	x1, x1, x3
+	cbnz	x1, compressFail
+	uzp1	v2.16b, v0.16b, v1.16b
+	subs	w5, w5, #1
+	str	q2, [x2], #16
+	b.ne	compressLoop
+compress8:
+	tst	w4, #8
+	b.eq	compress4
+	ldr	q0, [x0], #16
+	trn2	v2.16b, v0.16b, v0.16b
+	mov	x1, v2.D[0]
+	mov	x3, v2.D[1]
+	orr	x1, x1, x3
+	cbnz	x1, compressFail
+	xtn	v2.8b, v0.8h
+	str	d2, [x2], #8
+compress4:
+	tst	w4, #4
+	b.eq	compress2
+	ldr	d0, [x0], #8
+	trn2	v2.8b, v0.8b, v0.8b
+	mov	x1, v2.D[0]
+	cbnz	x1, compressFail
+	xtn	v2.8b, v0.8h
+	str	s2, [x2], #4
+compress2:
+	tst	w4, #2
+	b.eq	compress1
+	ldr	s0, [x0], #4
+	trn2	v2.8b, v0.8b, v0.8b
+	mov	w1, v2.S[0]
+	cbnz	w1, compressFail
+	xtn	v2.8b, v0.8h
+	str	h2, [x2], #2
+compress1:
+	tst	w4, #1
+	b.eq	compressDone
+	ldrh	w1, [x0], #2
+	cmp	w1, #256
+	b.cs	compressFail
+	strb	w1, [x2], #1
+	b	compressDone
+compressFail:
+	mov	x4, #0
+compressDone:
+	mov	x0, x4
+	ret

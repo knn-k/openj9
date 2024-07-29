@@ -1614,6 +1614,7 @@ void initializeCodeRuntimeHelperTable(J9JITConfig *jitConfig, char isSMP)
 #else
    SET(TR_ARM64fieldWatchHelper,                  (void *) 0,                                TR_Helper);
 #endif
+   SET(TR_ARM6464StringUTF16compressCharArray,    (void *) stringUTF16compressCharArray,     TR_Helper);
 
 #elif defined(TR_HOST_S390)
    SET(TR_S390double2Long,                                (void *) 0,                                              TR_Helper);
