@@ -1406,7 +1406,9 @@ bool J9::RecognizedCallTransformer::isInlineable(TR::TreeTop* treetop)
                return false;
             else
                return true;
+         /* Stop inlining this for debug
          case TR::java_lang_invoke_MethodHandle_linkToVirtual:
+         */
          case TR::java_lang_invoke_MethodHandle_linkToInterface:
             return true;
          default:
