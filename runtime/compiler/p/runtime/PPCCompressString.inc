@@ -37,11 +37,13 @@
 	.globl    .__compressStringNoCheck
 	.globl    .__compressStringNoCheckJ
 	.globl    .__andORString
+	.globl    .__stringUTF16compressCharArray
 	.globl    __compressString{DS}
 	.globl    __compressStringJ{DS}
 	.globl    __compressStringNoCheck{DS}
 	.globl    __compressStringNoCheckJ{DS}
 	.globl    __andORString{DS}
+	.globl    __stringUTF16compressCharArray{DS}
 !	.globl    .__arrayCopy_dp
 !	.globl    __arrayCopy_dp{DS}
 
@@ -56,6 +58,8 @@
 	.type     FUNC_LABEL(__compressStringNoCheckJ),@function
 	.globl    FUNC_LABEL(__andORString)
 	.type     FUNC_LABEL(__andOrString),@function
+	.globl    FUNC_LABEL(__stringUTF16compressCharArray)
+	.type     FUNC_LABEL(__stringUTF16compressCharArray),@function
 
 #elif defined(LINUX)
 	.globl    __compressString
@@ -63,6 +67,7 @@
 	.globl    __compressStringNocheck
 	.globl    __compressStringNocheckJ
 	.globl    __andORString
+	.globl    __stringUTF16compressCharArray
 !	.globl    __arrayCopy_dp
 #endif
 
@@ -516,6 +521,167 @@ L.__finishandOR:
 	bclr    BO_IF, CR0_EQ
 	endproc.__andORString:
 
+#ifdef AIXPPC
+.__stringUTF16compressCharArray:
+	.function .__stringUTF16compressCharArray,startproc.__stringUTF16compressCharArray,16,0,(endproc.__stringUTF16compressCharArray-startproc.__stringUTF16compressCharArray)
+#elif defined(LINUXPPC64)
+FUNC_LABEL(__stringUTF16compressCharArray):
+#else
+__stringUTF16compressCharArray:
+#endif
+! input:
+! r3 = input ptr
+! r4 = output ptr
+! r5 = num_elements
+! output:
+! r3 = number_elements on success, 0 on failure
+! clobbered: r4-r7, r11, vr0-vr4, cr0, cr6, fp0-fp1 ifndef VSXSTORES
+	startproc.__stringUTF16compressCharArray:
+
+#if 1 // !defined(__LITTLE_ENDIAN__)
+        ori             r7, r5, 0               ! preserve num_elements
+
+#ifdef ALIGNLOOP
+! Alignment loop, aligns input ptr to 16 bytes
+        cmpi            cr0, 0, r5, 8
+        blt-            cr0, .L__simple_TRTO255
+.L__alignLoop_TRTO255:
+        andi.           r6, r3, 0xf
+        beq             cr0, .L__main_TRTO255   ! if clear, we are aligned
+        lhz             r6, 0(r3)
+        andi.           r11, r6, 0xff00
+        bne-            cr0, .L__failure        ! element has bits in 0xff00, we are done
+        stb             r6, 0(r4)
+        addi            r3, r3, 2
+        addi            r4, r4, 1
+        addi            r5, r5, -1
+        cmpli           cr0, 0, r5, 0
+        bne             cr0, .L__alignLoop_TRTO255
+        b               .L__done_TRTO255
+#else
+        cmpli           cr0, 0, r5, 23          ! if we have less than 23 elements, go straight to residue
+        blt-            cr0, .L__simple_TRTO255   ! since vector loop needs >= 16 and this decision tree needs >= 7
+
+        andi.           r6, r3, 0x2             ! if set, input alignment is one of 2, 6, 10, 14
+        beq             cr0, .L__test4_TRTO255
+        lhz             r6, 0(r3)
+        andi.           r11, r6, 0xff00
+        bne-            cr0, .L__failure
+        stb             r6, 0(r4)
+        addi            r3, r3, 2               ! input alignment is now one of 4, 8, 12, 16
+        addi            r4, r4, 1
+        addi            r5, r5, -1
+.L__test4_TRTO255:
+        andi.           r6, r3, 0x4             ! if set, input alignment is one of 4, 12
+        beq             cr0, .L__test8_TRTO255
+        lwz             r6, 0(r3)
+        rlwinm          r6, r6, 16, 0, 31
+        andi.           r11, r6, 0xff00
+        bne-            cr0, .L__failure
+        stb             r6, 0(r4)
+        andis.          r11, r6, 0xff00
+        addi            r4, r4, 1
+        bne-            cr0, .L__failure
+        rlwinm          r6, r6, 32-16, 16, 31
+        stb             r6, 0(r4)
+        addi            r3, r3, 4               ! input alignment is now one of 8, 16
+        addi            r4, r4, 1
+        addi            r5, r5, -2
+.L__test8_TRTO255:
+        andi.           r6, r3, 0x8             ! if set, input alignment is 8
+        beq             cr0, .L__main_TRTO255
+        lwz             r6, 0(r3)
+        rlwinm          r6, r6, 16, 0, 31
+        andi.           r11, r6, 0xff00
+        bne-            cr0, .L__failure
+        stb             r6, 0(r4)
+        andis.          r11, r6, 0xff00
+        addi            r4, r4, 1
+        bne-            cr0, .L__failure
+        rlwinm          r6, r6, 32-16, 16, 31
+        stb             r6, 0(r4)
+        lwz             r6, 4(r3)
+        rlwinm          r6, r6, 16, 0, 31
+        andi.           r11, r6, 0xff00
+        addi            r4, r4, 1
+        bne-            cr0, .L__failure
+        stb             r6, 0(r4)
+        andis.          r11, r6, 0xff00
+        addi            r4, r4, 1
+        bne-            cr0, .L__failure
+        rlwinm          r6, r6, 32-16, 16, 31
+        stb             r6, 0(r4)
+        addi            r3, r3, 8               ! input alignment is now 16
+        addi            r4, r4, 1
+        addi            r5, r5, -4
+#endif
+
+.L__main_TRTO255:
+#ifdef ALIGNLOOP
+        rlwinm.         r6, r5, 32-4, 4, 31     ! r6 = num_elements / 16, processed in vector loop
+        beq             cr0, .L__alignResidue_TRTO255   ! if <16 elements, goto residue
+#else
+        rlwinm          r6, r5, 32-4, 4, 31     ! r6 = num_elements / 16, processed in vector loop
+#endif
+
+! Vector loop, 16 elements per iter
+        mtctr           r6
+        rlwinm          r5, r5, 0, 28, 31       ! r5 = num_elements % 16, processed in residue loop
+        li              r6, 16
+        li              r11, 8
+        lvsl            vr0, r0, r3             ! vr0 = 0x000102030405060708090a0b0c0d0e0f, since r3 & 15 == 0
+        vspltisb        vr1, 1                  ! vr1 = 16*{1}
+        vslb            vr1, vr0, vr1           ! vr1 = 0x00020406080a0c0e10121416181a1c1e = permute control vector
+        vspltisw        vr0, 0                  ! vr0 = 0
+.L__vectorLoop_TRTO255:
+        lvx             vr2, r0, r3             ! load elements 0-7
+        lvx             vr3, r3, r6             ! load elements 8-15
+        vperm           vr4, vr2, vr3, vr1      ! vr4 now contains high byte of elements 0-15
+        vcmpequh_r      vr4, vr4, vr0           ! cmp high bytes against 0, cr6[lt] set if all clear
+        bge-            cr6, .L__failure        ! if !cr[lt], i.e. ge, at least one element has bits in 0xff00, goto failure
+                                                ! At this point we know all elements are 8 bits long
+        vpkuhus         vr2, vr2, vr3           ! pack all 16 elements
+#ifdef VSXSTORES
+        ! VSX 8-byte stores perform very poorly on P7
+        xxpermdi        vs35, vs34, vs34, 2     ! swap elements 0-7 with 8-15
+        stxsdx          vs34, r0, r4            ! store elements 0-7
+        stxsdx          vs35, r4, r11           ! store elements 8-15
+#else
+        xxlor           vs0, vs34, vs34         ! move to fp0
+        xxpermdi        vs1, vs34, vs34, 2      ! swap elements 0-7 with 8-15, move to fp1
+        stfdx           fp0, r0, r4             ! store elements 0-7
+        stfdx           fp1, r4, r11            ! store elements 8-15
+#endif
+        addi            r3, r3, 32              ! bump input ptr
+        addi            r4, r4, 16              ! bump output ptr
+        bdnz            .L__vectorLoop_TRTO255
+
+! Residue loop, single element per iter
+.L__vectorResidue_TRTO255:
+        mfctr           r6
+        rlwimi          r5, r6, 4, 0, 27        ! add remaining elements from vector loop to residue loop
+.L__simple_TRTO255:
+        cmpi            cr0, 0, r5, 0
+        beq             cr0, .L__done_TRTO255   ! if 0 elements left, we are done
+.L__alignResidue_TRTO255:
+        mtctr           r5
+        addi            r3, r3, -2              ! adjust so we can use lhzu
+.L__residueLoop_TRTO255:
+        lhzu            r5, 2(r3)
+        andi.           r6, r5, 0xff00
+        bne-            .L__failure
+        stb             r5, 0(r4)
+        addi            r4, r4, 1
+        bdnz            .L__residueLoop_TRTO255
+
+.L__done_TRTO255:
+	ori             r3, r7, 0               ! r3 = num_elements
+	blr
+.L__failure:
+	li              r3, 0
+	blr
+#endif
+	endproc.__stringUTF16compressCharArray:
 
 
 ! .data section

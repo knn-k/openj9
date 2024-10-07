@@ -349,6 +349,7 @@ JIT_HELPER(compressStringNoCheckJ);
 JIT_HELPER(andORString);
 JIT_HELPER(encodeUTF16Big);
 JIT_HELPER(encodeUTF16Little);
+JIT_HELPER(encodeUTF16Big);
 
 #ifdef J9VM_OPT_JAVA_CRYPTO_ACCELERATION
 JIT_HELPER(doAESENCEncrypt);
@@ -450,6 +451,7 @@ JIT_HELPER(__referenceArrayCopy);
 JIT_HELPER(__generalArrayCopy);
 JIT_HELPER(__encodeUTF16Big);
 JIT_HELPER(__encodeUTF16Little);
+JIT_HELPER(__stringUTF16compressCharArray);
 
 JIT_HELPER(__quadWordArrayCopy_vsx);
 JIT_HELPER(__forwardQuadWordArrayCopy_vsx);
@@ -1424,6 +1426,7 @@ void initializeCodeRuntimeHelperTable(J9JITConfig *jitConfig, char isSMP)
    SET(TR_PPCarrayTranslateTROT,       (void *) __arrayTranslateTROT,    TR_Helper);
    SET(TR_PPCencodeUTF16Big,           (void *) __encodeUTF16Big,        TR_Helper);
    SET(TR_PPCencodeUTF16Little,        (void *) __encodeUTF16Little,     TR_Helper);
+   SET(TR_PPCStringUTF16compressCharArray, (void *) __stringUTF16compressCharArray,  TR_Helper);
 
 #elif defined(TR_HOST_ARM)
    SET(TR_ARMdouble2Long,                                (void *) __double2Long,                                  TR_Helper);

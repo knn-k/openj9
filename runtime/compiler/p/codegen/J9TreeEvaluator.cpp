@@ -11957,6 +11957,119 @@ static void inlineArrayCopy_ICF(TR::Node *node, int64_t byteLen, TR::Register *s
    return;
    }
 
+#if JAVA_SPEC_VERSION >= 11
+static TR::Register *inlineStringUTF16compressCharArray(TR::Node *node, TR::CodeGenerator *cg)
+   {
+   TR_ASSERT_FATAL(!TR::Compiler->om.canGenerateArraylets(), "StringUTF16.compress intrinsic is not supported with arraylets");
+   TR_ASSERT_FATAL_WITH_NODE(node, node->getNumChildren() == 5, "Wrong number of children in inlineStringUTF16compressCharArray");
+
+   TR::Register *inputReg = cg->gprClobberEvaluate(node->getChild(0));
+   TR::Register *outputReg = cg->gprClobberEvaluate(node->getChild(2));
+   TR::Register *inputLenReg = cg->gprClobberEvaluate(node->getChild(4));
+   TR::Register *resultReg = cg->allocateRegister();
+   TR::Register *condReg = cg->allocateRegister(TR_CCR);
+
+   int noOfDependecies = 16;
+
+   TR::RegisterDependencyConditions *deps = new (cg->trHeapMemory()) TR::RegisterDependencyConditions(1, noOfDependecies, cg->trMemory());
+
+   deps->addPreCondition(inputReg, TR::RealRegister::gr3);
+
+   deps->addPostCondition(resultReg, TR::RealRegister::gr3);
+   deps->addPostCondition(outputReg, TR::RealRegister::gr4);
+   deps->addPostCondition(inputLenReg, TR::RealRegister::gr5);
+
+   // Clobbered by the helper
+   TR::Register *clobberedReg;
+   deps->addPostCondition(clobberedReg = cg->allocateRegister(), TR::RealRegister::gr6);
+   cg->stopUsingRegister(clobberedReg);
+   deps->addPostCondition(clobberedReg = cg->allocateRegister(), TR::RealRegister::gr7);
+   cg->stopUsingRegister(clobberedReg);
+
+   //CCR.
+   deps->addPostCondition(condReg, TR::RealRegister::cr0);
+
+   //Trampoline
+   deps->addPostCondition(clobberedReg = cg->allocateRegister(), TR::RealRegister::gr11);
+   cg->stopUsingRegister(clobberedReg);
+
+   //VR's
+   deps->addPostCondition(clobberedReg = cg->allocateRegister(), TR::RealRegister::vr0);
+   cg->stopUsingRegister(clobberedReg);
+   deps->addPostCondition(clobberedReg = cg->allocateRegister(), TR::RealRegister::vr1);
+   cg->stopUsingRegister(clobberedReg);
+   deps->addPostCondition(clobberedReg = cg->allocateRegister(), TR::RealRegister::vr2);
+   cg->stopUsingRegister(clobberedReg);
+   deps->addPostCondition(clobberedReg = cg->allocateRegister(), TR::RealRegister::vr3);
+   cg->stopUsingRegister(clobberedReg);
+
+   //FP/VSR
+   deps->addPostCondition(clobberedReg = cg->allocateRegister(), TR::RealRegister::vsr0);
+   cg->stopUsingRegister(clobberedReg);
+   deps->addPostCondition(clobberedReg = cg->allocateRegister(), TR::RealRegister::vsr1);
+   cg->stopUsingRegister(clobberedReg);
+
+   deps->addPostCondition(clobberedReg = cg->allocateRegister(), TR::RealRegister::cr6);
+   cg->stopUsingRegister(clobberedReg);
+
+   deps->addPostCondition(clobberedReg = cg->allocateRegister(), TR::RealRegister::vr4);
+   cg->stopUsingRegister(clobberedReg);
+
+   // Add header size
+   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi, node, inputReg, inputReg, TR::Compiler->om.contiguousArrayHeaderSizeInBytes());
+   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi, node, outputReg, outputReg, TR::Compiler->om.contiguousArrayHeaderSizeInBytes());
+
+   // Add offsets
+   TR::Node *srcOffsetNode = node->getChild(1);
+   if (!srcOffsetNode->getOpCode().isLoadConst() || srcOffsetNode->getInt() != 0)
+      {
+      TR::Register *srcOffsetReg = cg->evaluate(srcOffsetNode);
+      // add srcOffsetReg x 2
+      generateTrg1Src2Instruction(cg, TR::InstOpCode::add, node, inputReg, inputReg, srcOffsetReg);
+      generateTrg1Src2Instruction(cg, TR::InstOpCode::add, node, inputReg, inputReg, srcOffsetReg);
+      }
+   TR::Node *dstOffsetNode = node->getChild(3);
+   if (!dstOffsetNode->getOpCode().isLoadConst() || dstOffsetNode->getInt() != 0)
+      {
+      TR::Register *dstOffsetReg = cg->evaluate(dstOffsetNode);
+      generateTrg1Src2Instruction(cg, TR::InstOpCode::add, node, outputReg, outputReg, dstOffsetReg);
+      }
+
+   TR::LabelSymbol *labelArrayTranslateStart = generateLabelSymbol(cg);
+   TR::LabelSymbol *labelArrayTranslateDone  = generateLabelSymbol(cg);
+   labelArrayTranslateStart->setStartInternalControlFlow();
+   labelArrayTranslateDone->setEndInternalControlFlow();
+
+   generateLabelInstruction(cg, TR::InstOpCode::label, node, labelArrayTranslateStart);
+
+   TR_RuntimeHelper helper = TR_PPCStringUTF16compressCharArray;
+   TR::SymbolReference *helperSym = cg->symRefTab()->findOrCreateRuntimeHelper(helper);
+   uintptr_t addr = (uintptr_t)helperSym->getMethodAddress();
+   generateDepImmSymInstruction(cg, TR::InstOpCode::bl, node, addr, deps, helperSym);
+
+   generateDepLabelInstruction(cg, TR::InstOpCode::label, node, labelArrayTranslateDone, deps);
+
+   for (uint32_t i = 0; i < node->getNumChildren(); ++i)
+      cg->decReferenceCount(node->getChild(i));
+
+   cg->stopUsingRegister(condReg);
+
+   if (inputReg != node->getChild(0)->getRegister())
+      cg->stopUsingRegister(inputReg);
+
+   if (outputReg != node->getChild(2)->getRegister())
+      cg->stopUsingRegister(outputReg);
+
+   if (inputLenReg != node->getChild(4)->getRegister())
+      cg->stopUsingRegister(inputLenReg);
+
+   cg->machine()->setLinkRegisterKilled(true);
+   cg->setHasCall();
+   node->setRegister(resultReg);
+   return resultReg;
+   }
+#endif /* JAVA_SPEC_VERSION >= 11 */
+
 bool
 J9::Power::CodeGenerator::inlineDirectCall(TR::Node *node, TR::Register *&resultReg)
    {
@@ -12272,6 +12385,16 @@ J9::Power::CodeGenerator::inlineDirectCall(TR::Node *node, TR::Register *&result
             return result;
             }
          break;
+
+#if JAVA_SPEC_VERSION >= 11
+      case TR::java_lang_StringUTF16_compress_charArray:
+         if (cg->getSupportsInlineStringUTF16CompressCharArray())
+            {
+            resultReg = inlineStringUTF16compressCharArray(node, cg);
+            return true;
+            }
+         break;
+#endif /* JAVA_SPEC_VERSION >= 11 */
 
       case TR::sun_misc_Unsafe_compareAndSwapInt_jlObjectJII_Z:
         // In Java9 this can be either the jdk.internal JNI method or the sun.misc Java wrapper.

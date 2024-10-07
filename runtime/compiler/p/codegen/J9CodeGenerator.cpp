@@ -108,6 +108,16 @@ J9::Power::CodeGenerator::initialize()
       !disableStringInflateIntrinsic)
       cg->setSupportsInlineStringLatin1Inflate();
 
+   static bool enableInlineStringUTF16CompressCharArray = feGetEnv("TR_enableInlineStringUTF16CompressCharArray") != NULL;
+   if (!TR::Compiler->om.canGenerateArraylets() &&
+#if defined(J9VM_GC_ENABLE_SPARSE_HEAP_ALLOCATION)
+       !TR::Compiler->om.isOffHeapAllocationEnabled() &&
+#endif /* J9VM_GC_ENABLE_SPARSE_HEAP_ALLOCATION */
+       enableInlineStringUTF16CompressCharArray)
+      {
+      cg->setSupportsInlineStringUTF16CompressCharArray();
+      }
+
    if (!comp->getOption(TR_DisableReadMonitors))
       cg->setSupportsReadOnlyLocks();
 
