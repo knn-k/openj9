@@ -12052,7 +12052,7 @@ J9::Power::CodeGenerator::inlineDirectCall(TR::Node *node, TR::Register *&result
             }
          break;
 
-      case TR::java_lang_StringLatin1_inflate:
+      case TR::java_lang_StringLatin1_inflate_BICII:
          if (cg->getSupportsInlineStringLatin1Inflate())
             {
             bool result = inlineIntrinsicInflate(node, cg);

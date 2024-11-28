@@ -42,6 +42,7 @@
 #include "optimizer/CallInfo.hpp"
 #include "optimizer/IdiomRecognitionUtils.hpp"
 #include "optimizer/Structure.hpp"
+#include "optimizer/ValuePropagation.hpp"
 #include "codegen/CodeGenerator.hpp"
 #include "optimizer/TransformUtil.hpp"
 #include "env/j9method.h"
@@ -269,6 +270,96 @@ void J9::RecognizedCallTransformer::process_java_lang_StringCoding_encodeASCII(T
    cfg->addEdge(ifCmpTreeTop->getEnclosingBlock(), fallbackPathBlock);
    cfg->addEdge(fallthroughBlock, tailBlock);
    cfg->removeEdge(fallthroughBlock, fallbackPathBlock);
+   }
+
+void J9::RecognizedCallTransformer::process_java_lang_StringLatin1_inflate_BIBII(TR::TreeTop *treetop, TR::Node *node)
+   {
+   /*
+    * Replace the call with the following tree (+ boundary checks)
+    *
+    * treetop
+    *   arraytranslate (TROTNoBreak)
+    *     aladd
+    *       srcObj
+    *       ladd
+    *         srcOff
+    *         hdrSize
+    *     aladd
+    *       dstObj
+    *       ladd
+    *         lmul
+    *           dstOff
+    *           lconst 2
+    *         hdrSize
+    *     iconst 0 (dummy: table node)
+    *     iconst 0xffff (term char node)
+    *     length
+    *     iconst -1 (dummy: stop index node)
+    */
+   printf("@@ inflate([BI[BII)V: %s\n", comp()->signature());
+   TR_ASSERT_FATAL(comp()->cg()->getSupportsArrayTranslateTROTNoBreak(), "Support for arraytranslateTROTNoBreak is required");
+
+   bool is64BitTarget = comp()->target().is64Bit();
+
+   TR::Node *srcObj = node->getChild(0);
+   TR::Node *srcOff = node->getChild(1);
+   TR::Node *dstObj = node->getChild(2);
+   TR::Node *dstOff = node->getChild(3);
+   TR::Node *length = node->getChild(4);
+
+   TR::Node *hdrSize = createHdrSizeNode(comp(), node);
+
+   TR::Node *strideNode;
+   if (is64BitTarget)
+      {
+      strideNode = TR::Node::create(node, TR::lconst);
+      strideNode->setLongInt(2);
+      }
+   else
+      {
+      strideNode = TR::Node::create(node, TR::iconst, 0, 2);
+      }
+
+   TR::Node *arrayTranslateNode = TR::Node::create(node, TR::arraytranslate, 6);
+   arrayTranslateNode->setSourceIsByteArrayTranslate(true);
+   arrayTranslateNode->setTargetIsByteArrayTranslate(false);
+   arrayTranslateNode->setTermCharNodeIsHint(false);
+   arrayTranslateNode->setSourceCellIsTermChar(false);
+   arrayTranslateNode->setTableBackedByRawStorage(true);
+   arrayTranslateNode->setSymbolReference(comp()->getSymRefTab()->findOrCreateArrayTranslateSymbol());
+
+   TR::Node *srcAddr, *dstAddr;
+
+#if defined(OMR_GC_SPARSE_HEAP_ALLOCATION)
+   if (TR::Compiler->om.isOffHeapAllocationEnabled())
+      {
+      dstOff = TR::TransformUtil::generateConvertArrayElementIndexToOffsetTrees(comp(), dstOff, strideNode, 0, false);
+      srcAddr = TR::TransformUtil::generateArrayElementAddressTrees(comp(), srcObj, srcOff);
+      dstAddr = TR::TransformUtil::generateArrayElementAddressTrees(comp(), dstObj, dstOff);
+      }
+   else
+#endif /* OMR_GC_SPARSE_HEAP_ALLOCATION */
+      {
+      TR::Node *tmpNode;
+      tmpNode = TR::Node::create(is64BitTarget ? TR::ladd : TR::iadd, 2, srcOff, hdrSize);
+      srcAddr = TR::Node::create(is64BitTarget ? TR::aladd : TR::aiadd, 2, srcObj, tmpNode);
+      tmpNode = TR::Node::create(is64BitTarget ? TR::lmul : TR::imul, 2, dstOff, strideNode);
+      tmpNode = TR::Node::create(is64BitTarget ? TR::ladd : TR::iadd, 2, tmpNode, hdrSize);
+      dstAddr = TR::Node::create(is64BitTarget ? TR::aladd : TR::aiadd, 2, dstObj, tmpNode);
+      }
+   TR::Node *termCharNode = TR::Node::create(TR::iconst, 0, 0xffff); // mask for ISO 8859-1 decoder
+   TR::Node *tableNode = TR::Node::create(TR::iconst, 0, 0); // dummy table node
+   TR::Node *stoppingNode = TR::Node::create(TR::iconst, 0, -1); // dummy stop index node
+
+   arrayTranslateNode->setAndIncChild(0, srcAddr);
+   arrayTranslateNode->setAndIncChild(1, dstAddr);
+   arrayTranslateNode->setAndIncChild(2, tableNode);
+   arrayTranslateNode->setAndIncChild(3, termCharNode);
+   arrayTranslateNode->setAndIncChild(4, length);
+   arrayTranslateNode->setAndIncChild(5, stoppingNode);
+   treetop->setNode(arrayTranslateNode);
+
+   node->recursivelyDecReferenceCount();
    }
 
 void J9::RecognizedCallTransformer::process_java_lang_StringUTF16_toBytes(TR::TreeTop* treetop, TR::Node* node)
@@ -1449,6 +1540,8 @@ bool J9::RecognizedCallTransformer::isInlineable(TR::TreeTop* treetop)
          case TR::java_lang_StringCoding_encodeASCII:
          case TR::java_lang_String_encodeASCII:
             return comp()->cg()->getSupportsInlineEncodeASCII();
+         case TR::java_lang_StringLatin1_inflate_BIBII:
+            return comp()->cg()->getSupportsArrayTranslateTROTNoBreak();
          case TR::jdk_internal_util_ArraysSupport_vectorizedMismatch:
             return comp()->cg()->getSupportsInlineVectorizedMismatch();
          default:
@@ -1572,6 +1665,9 @@ void J9::RecognizedCallTransformer::transform(TR::TreeTop* treetop)
          case TR::java_lang_StringCoding_encodeASCII:
          case TR::java_lang_String_encodeASCII:
             process_java_lang_StringCoding_encodeASCII(treetop, node);
+            break;
+         case TR::java_lang_StringLatin1_inflate_BIBII:
+            process_java_lang_StringLatin1_inflate_BIBII(treetop, node);
             break;
          case TR::java_lang_StrictMath_sqrt:
          case TR::java_lang_Math_sqrt:
