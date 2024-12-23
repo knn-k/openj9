@@ -5603,8 +5603,15 @@ TR_J9InlinerPolicy::supressInliningRecognizedInitialCallee(TR_CallSite* callsite
             }
          break;
          }
-      case TR::java_lang_StringLatin1_inflate:
+      case TR::java_lang_StringLatin1_inflate_BICII:
          if (comp->cg()->getSupportsInlineStringLatin1Inflate())
+            {
+            return true;
+            }
+      case TR::java_lang_StringLatin1_inflate_BIBII:
+         if ((comp->cg()->getSupportsArrayTranslateTROTNoBreak() ||
+              (comp->cg()->getSupportsArrayTranslateTRxx() && comp->cg()->getSupportsVectorRegisters())) &&
+             !comp->target().cpu.isPower())
             {
             return true;
             }
