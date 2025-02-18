@@ -5361,6 +5361,7 @@ TR_J9InlinerPolicy::supressInliningRecognizedInitialCallee(TR_CallSite* callsite
    // (Methods we must not inline for correctness don't go in the next switch below.)
    //
    TR::RecognizedMethod rm = initialCalleeMethod->getRecognizedMethod();
+   TR::CodeGenerator *cg = comp->cg();
    switch (rm)
       {
       /*
@@ -5459,7 +5460,7 @@ TR_J9InlinerPolicy::supressInliningRecognizedInitialCallee(TR_CallSite* callsite
       case TR::java_math_BigDecimal_slowSubMulSetScale:
       case TR::java_math_BigDecimal_slowAddAddMulSetScale:
       case TR::java_math_BigDecimal_slowMulSetScale:
-         if (comp->cg()->getSupportsBDLLHardwareOverflowCheck())
+         if (cg->getSupportsBDLLHardwareOverflowCheck())
             return true;
          break;
       case TR::java_util_concurrent_atomic_AtomicIntegerFieldUpdater_getAndDecrement:
@@ -5468,7 +5469,7 @@ TR_J9InlinerPolicy::supressInliningRecognizedInitialCallee(TR_CallSite* callsite
       case TR::java_util_concurrent_atomic_AtomicIntegerFieldUpdater_decrementAndGet:
       case TR::java_util_concurrent_atomic_AtomicIntegerFieldUpdater_incrementAndGet:
       case TR::java_util_concurrent_atomic_AtomicIntegerFieldUpdater_addAndGet:
-         if (comp->cg()->getSupportsAtomicLoadAndAdd())
+         if (cg->getSupportsAtomicLoadAndAdd())
             return true;
          break;
       case TR::java_math_BigDecimal_valueOf:
@@ -5528,7 +5529,7 @@ TR_J9InlinerPolicy::supressInliningRecognizedInitialCallee(TR_CallSite* callsite
       case TR::com_ibm_jit_JITHelpers_toLowerIntrinsicLatin1:
       case TR::com_ibm_jit_JITHelpers_toUpperIntrinsicUTF16:
       case TR::com_ibm_jit_JITHelpers_toLowerIntrinsicUTF16:
-         if(comp->cg()->getSupportsInlineStringCaseConversion())
+         if(cg->getSupportsInlineStringCaseConversion())
             {
             return true;
             }
@@ -5541,14 +5542,14 @@ TR_J9InlinerPolicy::supressInliningRecognizedInitialCallee(TR_CallSite* callsite
       case TR::com_ibm_jit_JITHelpers_intrinsicIndexOfStringUTF16:
       case TR::com_ibm_jit_JITHelpers_intrinsicIndexOfLatin1:
       case TR::com_ibm_jit_JITHelpers_intrinsicIndexOfUTF16:
-         if (comp->cg()->getSupportsInlineStringIndexOf())
+         if (cg->getSupportsInlineStringIndexOf())
             {
             return true;
             }
          break;
       case TR::java_lang_Math_max_D:
       case TR::java_lang_Math_min_D:
-         if(comp->cg()->getSupportsVectorRegisters() && !comp->getOption(TR_DisableSIMDDoubleMaxMin))
+         if(cg->getSupportsVectorRegisters() && !comp->getOption(TR_DisableSIMDDoubleMaxMin))
             {
             return true;
             }
@@ -5607,45 +5608,45 @@ TR_J9InlinerPolicy::supressInliningRecognizedInitialCallee(TR_CallSite* callsite
                }
          // Intentional fallthrough here.
       case TR::java_lang_String_hashCodeImplCompressed:
-         if (comp->cg()->getSupportsInlineStringHashCode())
+         if (cg->getSupportsInlineStringHashCode())
             {
             return true;
             }
          break;
       case TR::jdk_internal_util_ArraysSupport_vectorizedHashCode:
          {
-         if (comp->cg()->getSupportsInlineVectorizedHashCode())
+         if (cg->getSupportsInlineVectorizedHashCode())
             {
             return true;
             }
          break;
          }
       case TR::java_lang_StringLatin1_inflate_BICII:
-         if (comp->cg()->getSupportsInlineStringLatin1Inflate())
+         if (cg->getSupportsInlineStringLatin1Inflate())
             {
             return true;
             }
       case TR::java_lang_StringLatin1_inflate_BIBII:
-         if (comp->cg()->getSupportsArrayTranslateTROTNoBreak() && !comp->target().cpu.isPower())
+         if (cg->getSupportsArrayTranslateTROTNoBreak() && !comp->target().cpu.isPower())
             {
             return true;
             }
          break;
       case TR::java_lang_StringCoding_hasNegatives:
-         if (comp->cg()->getSupportsInlineStringCodingHasNegatives())
+         if (cg->getSupportsInlineStringCodingHasNegatives())
             {
             return true;
             }
          break;
       case TR::java_lang_StringCoding_countPositives:
-         if (comp->cg()->getSupportsInlineStringCodingCountPositives())
+         if (cg->getSupportsInlineStringCodingCountPositives())
             {
             return true;
             }
          break;
       case TR::java_lang_Integer_stringSize:
       case TR::java_lang_Long_stringSize:
-         if (comp->cg()->getSupportsIntegerStringSize())
+         if (cg->getSupportsIntegerStringSize())
             {
             return true;
             }
@@ -5656,14 +5657,14 @@ TR_J9InlinerPolicy::supressInliningRecognizedInitialCallee(TR_CallSite* callsite
       case TR::java_lang_StringUTF16_getChars_Integer: // For uncompressed strings
       case TR::java_lang_Integer_getChars_charBuffer: // For uncompressed strings in Java 8
       case TR::java_lang_Long_getChars_charBuffer: // For uncompressed strings in Java 8
-         if (comp->cg()->getSupportsIntegerToChars())
+         if (cg->getSupportsIntegerToChars())
             {
             return true;
             }
          break;
       case TR::java_lang_StringCoding_encodeASCII:
       case TR::java_lang_String_encodeASCII:
-         if (comp->cg()->getSupportsInlineEncodeASCII())
+         if (cg->getSupportsInlineEncodeASCII())
             {
             return true;
             }
