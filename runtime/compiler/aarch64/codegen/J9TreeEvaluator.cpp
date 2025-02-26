@@ -3326,6 +3326,10 @@ J9::ARM64::TreeEvaluator::VMnewEvaluator(TR::Node *node, TR::CodeGenerator *cg)
    if (comp->getOption(TR_DisableTarokInlineArrayletAllocation) && (node->getOpCodeValue() == TR::anewarray || node->getOpCodeValue() == TR::newarray))
       return NULL;
 
+   // for debug
+   if (generateArraylets && node->getOpCodeValue() == TR::newarray)
+      return NULL;
+
    // Currently, we do not support realtime GC.
    if (comp->getOptions()->realTimeGC())
       return NULL;
