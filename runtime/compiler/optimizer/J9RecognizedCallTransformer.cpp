@@ -272,6 +272,51 @@ void J9::RecognizedCallTransformer::process_java_lang_StringCoding_encodeASCII(T
    cfg->removeEdge(fallthroughBlock, fallbackPathBlock);
    }
 
+   void J9::RecognizedCallTransformer::process_java_lang_StringLatin1_compareTo_BBII(TR::TreeTop *treetop, TR::Node *node)
+   {
+   // TODO
+   TR_ASSERT_FATAL(comp()->cg()->getSupportsArrayCmpLen(), "Support for arraycmplen is required");
+
+   static bool verboseLatin1compareTo = (feGetEnv("TR_verboseLatin1compareTo") != NULL);
+   if (verboseLatin1compareTo)
+      {
+      fprintf(stderr, "Recognize StringLatin1.compareTo([B[BII)I: %s @ %s\n",
+         comp()->signature(),
+         comp()->getHotnessName(comp()->getMethodHotness()));
+      }
+
+   TR::Node *srcObj = node->getChild(0);
+   TR::Node *dstObj = node->getChild(1);
+   TR::Node *srcLen = node->getChild(2);
+   TR::Node *dstLen = node->getChild(3);
+
+   TR::Node *icmpNode = TR::Node::create(node, TR::icmple, 2, srcLen, dstLen);
+   TR::Node *selectNode = TR::Node::create(node, TR::iselect, 3);
+   selectNode->setAndIncChild(0, icmpNode);
+   selectNode->setAndIncChild(1, srcLen);
+   selectNode->setAndIncChild(2, dstLen);
+   TR::Node *lim = TR::Node::create(node, TR::i2l, 1, selectNode);
+
+   TR::Node *srcAddr = TR::TransformUtil::generateArrayElementAddressTrees(comp(), srcObj, NULL, node);
+   TR::Node *dstAddr = TR::TransformUtil::generateArrayElementAddressTrees(comp(), dstObj, NULL, node);
+
+   TR::Node *arraycmplen = TR::Node::create(node, TR::arraycmplen, 3);
+   arraycmplen->setAndIncChild(0, srcAddr);
+   arraycmplen->setAndIncChild(1, dstAddr);
+   arraycmplen->setAndIncChild(2, lim);
+
+   TR::Node *ifCmpNode = TR::Node::createif(TR::iflcmpne, lim, arraycmplen);
+
+   TR::Node *isubNode1 = TR::Node::create(node, TR::isub, 2, srcLen, dstLen);
+
+   TR::Node *constOneNode = TR::Node::create(node, TR::iconst, 0, 1);
+   TR::Node *offsetNode = TR::Node::create(node, TR::iadd, 2, arraycmplen, constOneNode);
+   TR::Node *srcByteNode = TR::Node::create(node, TR::bloadi, 2, srcAddr, offsetNode); // @@
+   TR::Node *dstByteNode = TR::Node::create(node, TR::bloadi, 2, dstAddr, offsetNode); // @@
+   TR::Node *isubNode2 = TR::Node::create(node, TR::isub, 2, srcByteNode, dstByteNode);
+
+   }
+
 void J9::RecognizedCallTransformer::process_java_lang_StringLatin1_inflate_BIBII(TR::TreeTop *treetop, TR::Node *node)
    {
    /*
@@ -1731,6 +1776,8 @@ bool J9::RecognizedCallTransformer::isInlineable(TR::TreeTop* treetop)
          case TR::java_lang_StringCoding_encodeASCII:
          case TR::java_lang_String_encodeASCII:
             return comp()->cg()->getSupportsInlineEncodeASCII();
+         case TR::java_lang_StringLatin1_compareTo_BBII:
+            return false; // comp()->cg()->getSupportsArrayCmpLen();
          case TR::java_lang_StringLatin1_inflate_BIBII:
             return (comp()->cg()->getSupportsArrayTranslateTROTNoBreak() && !comp()->target().cpu.isPower());
          case TR::jdk_internal_util_ArraysSupport_vectorizedMismatch:
@@ -1880,6 +1927,9 @@ void J9::RecognizedCallTransformer::transform(TR::TreeTop* treetop)
          case TR::java_lang_StringCoding_encodeASCII:
          case TR::java_lang_String_encodeASCII:
             process_java_lang_StringCoding_encodeASCII(treetop, node);
+            break;
+         case TR::java_lang_StringLatin1_compareTo_BBII:
+            process_java_lang_StringLatin1_compareTo_BBII(treetop, node);
             break;
          case TR::java_lang_StringLatin1_inflate_BIBII:
             process_java_lang_StringLatin1_inflate_BIBII(treetop, node);
