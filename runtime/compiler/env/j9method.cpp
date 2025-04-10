@@ -3254,6 +3254,7 @@ void TR_ResolvedJ9Method::construct()
 
    static X StringLatin1Methods[] =
       {
+      { x(TR::java_lang_StringLatin1_compareTo_BBII,                          "compareTo",     "([B[BII)I")},
       { x(TR::java_lang_StringLatin1_indexOf,                                 "indexOf",       "([BI[BII)I")},
       { x(TR::java_lang_StringLatin1_indexOfChar,                             "indexOfChar",   "([BIII)I")},
       { x(TR::java_lang_StringLatin1_inflate_BICII,                           "inflate",       "([BI[CII)V")},
@@ -5175,6 +5176,7 @@ TR_ResolvedJ9Method::setRecognizedMethodInfo(TR::RecognizedMethod rm)
             case TR::java_lang_System_nanoTime:
             case TR::java_lang_String_hashCodeImplCompressed:
             case TR::java_lang_String_hashCodeImplDecompressed:
+            case TR::java_lang_StringLatin1_compareTo_BBII:
             case TR::java_lang_StringLatin1_inflate_BICII:
             case TR::java_lang_StringLatin1_inflate_BIBII:
             case TR::java_lang_StringCoding_hasNegatives:

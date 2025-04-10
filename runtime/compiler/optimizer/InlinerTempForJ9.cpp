@@ -5717,6 +5717,11 @@ TR_J9InlinerPolicy::supressInliningRecognizedInitialCallee(TR_CallSite* callsite
             }
          break;
          }
+         case TR::java_lang_StringLatin1_compareTo_BBII:
+         if (comp->cg()->getSupportsArrayCmpLen())
+            {
+            return true;
+            }
       case TR::java_lang_StringLatin1_inflate_BICII:
          if (comp->cg()->getSupportsInlineStringLatin1Inflate())
             {
