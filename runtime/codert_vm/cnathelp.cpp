@@ -20,6 +20,8 @@
  * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0 OR GPL-2.0-only WITH OpenJDK-assembly-exception-1.0
  *******************************************************************************/
 
+#include <stdlib.h>
+
 #include "j9.h"
 #include "j9protos.h"
 #include "j9consts.h"
@@ -164,6 +166,9 @@ buildJITResolveFrameWithPC(J9VMThread *currentThread, UDATA flags, UDATA parmCou
 void
 buildBranchJITResolveFrame(J9VMThread *currentThread, void *pc, UDATA flags)
 {
+	if ((UDATA)pc & 3) {
+		fprintf(stderr, "(1) oldPC is %p\n", pc);
+	}
 	buildJITResolveFrameWithPC(currentThread, flags | J9_SSF_JIT_RESOLVE, 0, false, 0, pc);
 }
 
@@ -452,6 +457,9 @@ static VMINLINE void*
 buildJITResolveFrame(J9VMThread *currentThread, UDATA flags, UDATA helperParmCount, bool checkScavengeOnResolve = true, UDATA spAdjust = 0)
 {
 	void *oldPC = currentThread->jitReturnAddress;
+	if ((UDATA)oldPC & 3) {
+		fprintf(stderr, "(2) oldPC is %p\n", oldPC);
+	}
 	return buildJITResolveFrameWithPC(currentThread, flags, helperParmCount, checkScavengeOnResolve, spAdjust, oldPC);
 }
 
@@ -1537,6 +1545,10 @@ void* J9FASTCALL
 old_slow_jitHandleArrayIndexOutOfBoundsTrap(J9VMThread *currentThread)
 {
 	JIT_HELPER_PROLOGUE();
+	UDATA oldPC = (UDATA)currentThread->jitException;
+	if (oldPC & 3) {
+		fprintf(stderr, "(3A) oldPC is %x\n", oldPC);
+	}
 	buildJITResolveFrameForTrapHandler(currentThread);
 	return setCurrentExceptionFromJIT(currentThread, J9VMCONSTANTPOOL_JAVALANGARRAYINDEXOUTOFBOUNDSEXCEPTION, NULL);
 }
@@ -1545,6 +1557,10 @@ void* J9FASTCALL
 old_slow_jitHandleIntegerDivideByZeroTrap(J9VMThread *currentThread)
 {
 	JIT_HELPER_PROLOGUE();
+	UDATA oldPC = (UDATA)currentThread->jitException;
+	if (oldPC & 3) {
+		fprintf(stderr, "(3B) oldPC is %x\n", oldPC);
+	}
 	buildJITResolveFrameForTrapHandler(currentThread);
 	return setCurrentExceptionNLSFromJIT(currentThread, J9VMCONSTANTPOOL_JAVALANGARITHMETICEXCEPTION, J9NLS_VM_DIVIDE_BY_ZERO);
 }
@@ -1553,6 +1569,10 @@ void* J9FASTCALL
 old_slow_jitHandleNullPointerExceptionTrap(J9VMThread *currentThread)
 {
 	JIT_HELPER_PROLOGUE();
+	UDATA oldPC = (UDATA)currentThread->jitException;
+	if (oldPC & 3) {
+		fprintf(stderr, "(3C) oldPC is %x\n", oldPC);
+	}
 	buildJITResolveFrameForTrapHandler(currentThread);
 	return setCurrentExceptionFromJIT(currentThread, J9VMCONSTANTPOOL_JAVALANGNULLPOINTEREXCEPTION, NULL);
 }
@@ -1561,6 +1581,10 @@ void* J9FASTCALL
 old_slow_jitHandleInternalErrorTrap(J9VMThread *currentThread)
 {
 	JIT_HELPER_PROLOGUE();
+	UDATA oldPC = (UDATA)currentThread->jitException;
+	if (oldPC & 3) {
+		fprintf(stderr, "(3D) oldPC is %x\n", oldPC);
+	}
 	buildJITResolveFrameForTrapHandler(currentThread);
 	return setCurrentExceptionUTFFromJIT(currentThread, J9VMCONSTANTPOOL_JAVALANGINTERNALERROR, "SIGBUS");
 }

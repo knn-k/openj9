@@ -55,6 +55,8 @@
 
 #include <string.h>
 
+#include <stdlib.h>
+
 #if (defined(J9VM_INTERP_STACKWALK_TRACING))
 static void printFrameType (J9StackWalkState * walkState, char * frameType);
 
@@ -299,6 +301,9 @@ UDATA  walkStackFrames(J9VMThread *currentThread, J9StackWalkState *walkState)
 
 	while(1) {
 		J9SFStackFrame * fixedStackFrame;
+#if 0
+		int isJITResolve = ((UDATA)walkState->pc == J9SF_FRAME_TYPE_JIT_RESOLVE);
+#endif
 
 		walkState->constantPool = NULL;
 		walkState->unwindSP = NULL;
@@ -368,6 +373,12 @@ UDATA  walkStackFrames(J9VMThread *currentThread, J9StackWalkState *walkState)
 		/* Fetch the PC value before calling the frame walker since the debugger modifies PC values when breakpointing methods */
 
 		walkState->nextPC = ((J9SFStackFrame *) ((U_8 *) walkState->bp - sizeof(J9SFStackFrame) + sizeof(UDATA)))->savedPC;
+#if 0
+		if (isJITResolve && (((UDATA)walkState->nextPC & 3) != 0)) {
+			fprintf(stderr, "nextPC is %p\n", walkState->nextPC);
+			exit(-1);
+		}
+#endif
 
 		/* Walk the frame */
 
