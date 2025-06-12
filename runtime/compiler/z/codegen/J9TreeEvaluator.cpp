@@ -1159,6 +1159,8 @@ J9::Z::TreeEvaluator::inlineVectorizedStringIndexOf(TR::Node* node, TR::CodeGene
    const bool isStaticCall = node->getSymbolReference()->getSymbol()->castToMethodSymbol()->isStatic();
    const uint8_t firstCallArgIdx = isStaticCall ? 0 : 1;
 
+   fprintf(stderr, "* %s.indexOf() %d: %s @%s\n", (isUTF16 ? "UTF16" : "Latin1"), isStaticCall, cg->comp()->signature(), cg->comp()->getHotnessName());
+
    TR_S390ScratchRegisterManager *srm = cg->generateScratchRegisterManager(9);
 
    // Get call parameters where stringValue and patternValue are byte arrays
