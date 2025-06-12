@@ -10123,9 +10123,9 @@ static TR::Register* inlineIntrinsicIndexOf(TR::Node* node, TR::CodeGenerator* c
 static TR::Register* inlineIntrinsicStringIndexOfString(TR::Node* node, TR::CodeGenerator* cg, bool isLatin1)
    {
    static bool enableStrIdxOfStr = (feGetEnv("TR_enableStrIdxOfStr") != NULL);
-   if (!enableStrIdxOfStr || isLatin1 == false) return NULL;
+   if (!enableStrIdxOfStr) return NULL;
 
-   fprintf(stderr, "*Latin1.indexOf(): %s @%s\n", cg->comp()->signature(), cg->comp()->getHotnessName());
+   fprintf(stderr, "*%s.indexOfString: %s @%s\n", isLatin1 ? "Latin1" : "UTF16", cg->comp()->signature(), cg->comp()->getHotnessName());
 
    // This evaluator function handles different indexOf() intrinsics, some of which are static calls without a
    // receiver. Hence, the need for static call check.
@@ -10202,7 +10202,12 @@ static TR::Register* inlineIntrinsicStringIndexOfString(TR::Node* node, TR::Code
    TR::Register *s1idxReg = cg->allocateRegister(TR_GPR);
    TR::Register *s2idxReg = cg->allocateRegister(TR_GPR);
 
-   TR::RegisterDependencyConditions *dependencies = generateRegisterDependencyConditions((uint8_t)8, (uint8_t)8, cg);
+   TR::RegisterDependencyConditions *dependencies = generateRegisterDependencyConditions((uint8_t)13, (uint8_t)13, cg);
+   dependencies->addPreCondition(s1Reg, TR::RealRegister::NoReg, cg);
+   dependencies->addPreCondition(s2Reg, TR::RealRegister::NoReg, cg);
+   dependencies->addPreCondition(s2lenReg, TR::RealRegister::NoReg, cg);
+   dependencies->addPreCondition(maxReg, TR::RealRegister::NoReg, cg);
+   dependencies->addPreCondition(resultReg, TR::RealRegister::NoReg, cg);
    dependencies->addPreCondition(ECX, TR::RealRegister::ecx, cg);
    dependencies->addPreCondition(tmpReg1, TR::RealRegister::NoReg, cg);
    dependencies->addPreCondition(tmpReg2, TR::RealRegister::NoReg, cg);
@@ -10211,6 +10216,12 @@ static TR::Register* inlineIntrinsicStringIndexOfString(TR::Node* node, TR::Code
    dependencies->addPreCondition(xmmReg3, TR::RealRegister::NoReg, cg);
    dependencies->addPreCondition(s1idxReg, TR::RealRegister::NoReg, cg);
    dependencies->addPreCondition(s2idxReg, TR::RealRegister::NoReg, cg);
+
+   dependencies->addPostCondition(s1Reg, TR::RealRegister::NoReg, cg);
+   dependencies->addPostCondition(s2Reg, TR::RealRegister::NoReg, cg);
+   dependencies->addPostCondition(s2lenReg, TR::RealRegister::NoReg, cg);
+   dependencies->addPostCondition(maxReg, TR::RealRegister::NoReg, cg);
+   dependencies->addPostCondition(resultReg, TR::RealRegister::NoReg, cg);
    dependencies->addPostCondition(ECX, TR::RealRegister::ecx, cg);
    dependencies->addPostCondition(tmpReg1, TR::RealRegister::NoReg, cg);
    dependencies->addPostCondition(tmpReg2, TR::RealRegister::NoReg, cg);
@@ -10352,8 +10363,16 @@ static TR::Register* inlineIntrinsicStringIndexOfString(TR::Node* node, TR::Code
    generateLabelInstruction(TR::InstOpCode::JE1, node, doneLabel, cg); // resultReg has the result
 
    generateLabelInstruction(TR::InstOpCode::label, node, byteLoop, cg);
-   generateRegMemInstruction(TR::InstOpCode::L1RegMem, node, tmpReg1, generateX86MemoryReference(s2Reg, s2idxReg, shift, hdrSize, cg), cg);
-   generateMemRegInstruction(TR::InstOpCode::CMP1MemReg, node, generateX86MemoryReference(s1Reg, s1idxReg, shift, hdrSize, cg), tmpReg1, cg);
+   if (isLatin1)
+      {
+      generateRegMemInstruction(TR::InstOpCode::L1RegMem, node, tmpReg1, generateX86MemoryReference(s2Reg, s2idxReg, 0, hdrSize, cg), cg);
+      generateMemRegInstruction(TR::InstOpCode::CMP1MemReg, node, generateX86MemoryReference(s1Reg, s1idxReg, 0, hdrSize, cg), tmpReg1, cg);
+      }
+   else
+      {
+      generateRegMemInstruction(TR::InstOpCode::L2RegMem, node, tmpReg1, generateX86MemoryReference(s2Reg, s2idxReg, 1, hdrSize, cg), cg);
+      generateMemRegInstruction(TR::InstOpCode::CMP2MemReg, node, generateX86MemoryReference(s1Reg, s1idxReg, 1, hdrSize, cg), tmpReg1, cg);
+      }
    generateLabelInstruction(TR::InstOpCode::JNE1, node, unmatchLabel, cg);
 
    generateRegImmInstruction(TR::InstOpCode::ADDRegImm4(), node, s1idxReg, 1, cg);
@@ -12567,10 +12586,14 @@ J9::X86::TreeEvaluator::directCallEvaluator(TR::Node *node, TR::CodeGenerator *c
 
          callInlined = (returnRegister != NULL);
          break;
-      // case TR::java_lang_StringUTF16_indexOf:
-      // case TR::com_ibm_jit_JITHelpers_intrinsicIndexOfStringUTF16:
-      //   if (cg->getSupportsInlineStringIndexOfString())
-      //      return inlineIntrinsicStringIndexOfString(node, cg, false);
+
+      case TR::java_lang_StringUTF16_indexOf:
+      case TR::com_ibm_jit_JITHelpers_intrinsicIndexOfStringUTF16:
+         if (cg->getSupportsInlineStringIndexOfString())
+            returnRegister = inlineIntrinsicStringIndexOfString(node, cg, false);
+
+         callInlined = (returnRegister != NULL);
+         break;
 
       case TR::com_ibm_jit_JITHelpers_transformedEncodeUTF16Big:
       case TR::com_ibm_jit_JITHelpers_transformedEncodeUTF16Little:
