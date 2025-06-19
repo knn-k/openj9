@@ -10289,9 +10289,9 @@ static TR::Register* inlineIntrinsicStringIndexOfString(TR::Node* node, TR::Code
    generateLabelInstruction(TR::InstOpCode::JG4, node, notFoundLabel, cg);
 
    generateRegMemInstruction(TR::InstOpCode::LEARegMem(), node, tmpReg, generateX86MemoryReference(s1Reg, resultReg, shift, hdrSize, cg), cg);
-   generateRegRegInstruction(TR::InstOpCode::MOVRegReg(), node, ECX, tmpReg, cg);
+   generateRegRegInstruction(TR::InstOpCode::MOV4RegReg, node, ECX, tmpReg, cg);
    generateRegImmInstruction(TR::InstOpCode::ANDRegImms(), node, tmpReg, ~(width - 1), cg);
-   generateRegImmInstruction(TR::InstOpCode::ANDRegImms(), node, ECX, width - 1, cg);
+   generateRegImmInstruction(TR::InstOpCode::AND4RegImms, node, ECX, width - 1, cg);
    generateLabelInstruction(TR::InstOpCode::JE1, node, firstCharLoopLabel, cg);
 
    generateRegMemInstruction(TR::InstOpCode::MOVDQURegMem, node, xmmReg1, generateX86MemoryReference(tmpReg, 0, cg), cg);
@@ -10328,18 +10328,18 @@ static TR::Register* inlineIntrinsicStringIndexOfString(TR::Node* node, TR::Code
       {
       generateRegImmInstruction(TR::InstOpCode::SHR4RegImm1, node, tmpReg, shift, cg);
       }
-   generateRegRegInstruction(TR::InstOpCode::ADDRegReg(), node, resultReg, tmpReg, cg);
+   generateRegRegInstruction(TR::InstOpCode::ADD4RegReg, node, resultReg, tmpReg, cg);
 
    generateRegRegInstruction(TR::InstOpCode::CMP4RegReg, node, resultReg, maxReg, cg);
    generateLabelInstruction(TR::InstOpCode::JG4, node, notFoundLabel, cg);
 
-   generateRegRegInstruction(TR::InstOpCode::MOVRegReg(), node, s1idxReg, resultReg, cg);
-   generateRegImmInstruction(TR::InstOpCode::ADDRegImm4(), node, s1idxReg, 1, cg); // s1idx = offset + 1
-   generateRegImmInstruction(TR::InstOpCode::MOVRegImm4(), node, s2idxReg, 1, cg); // s2idx = 1
+   generateRegRegInstruction(TR::InstOpCode::MOV4RegReg, node, s1idxReg, resultReg, cg);
+   generateRegImmInstruction(TR::InstOpCode::ADD4RegImms, node, s1idxReg, 1, cg); // s1idx = offset + 1
+   generateRegImmInstruction(TR::InstOpCode::MOV4RegImm4, node, s2idxReg, 1, cg); // s2idx = 1
 
-   generateRegRegInstruction(TR::InstOpCode::MOVRegReg(), node, ECX, s2lenReg, cg);
-   generateRegImmInstruction(TR::InstOpCode::SUBRegImm4(), node, ECX, 1, cg); // 1st char has already matched
-   generateRegImmInstruction(TR::InstOpCode::SHRRegImm1(), node, ECX, 4, cg);
+   generateRegRegInstruction(TR::InstOpCode::MOV4RegReg, node, ECX, s2lenReg, cg);
+   generateRegImmInstruction(TR::InstOpCode::SUB4RegImms, node, ECX, 1, cg); // 1st char has already matched
+   generateRegImmInstruction(TR::InstOpCode::SHR4RegImm1, node, ECX, 4, cg);
    generateLabelInstruction(TR::InstOpCode::JE1, node, byteStart, cg);
 
    // Compare by 16 bytes
@@ -10348,19 +10348,19 @@ static TR::Register* inlineIntrinsicStringIndexOfString(TR::Node* node, TR::Code
    generateRegMemInstruction(TR::InstOpCode::MOVDQURegMem, node, xmmReg3, generateX86MemoryReference(s2Reg, s2idxReg, shift, hdrSize, cg), cg);
    generateRegRegInstruction(TR::InstOpCode::PCMPEQBRegReg, node, xmmReg1, xmmReg3, cg);
    generateRegRegInstruction(TR::InstOpCode::PMOVMSKB4RegReg, node, tmpReg, xmmReg1, cg);
-   generateRegImmInstruction(TR::InstOpCode::CMPRegImm4(), node, tmpReg, 0xffff, cg);
+   generateRegImmInstruction(TR::InstOpCode::CMP4RegImm4, node, tmpReg, 0xffff, cg);
    generateLabelInstruction(TR::InstOpCode::JNE1, node, unmatchLabel, cg);
 
-   generateRegImmInstruction(TR::InstOpCode::ADDRegImm4(), node, s1idxReg, width >> shift, cg);
-   generateRegImmInstruction(TR::InstOpCode::ADDRegImm4(), node, s2idxReg, width >> shift, cg);
-   generateRegImmInstruction(TR::InstOpCode::SUBRegImm4(), node, ECX, 1, cg);
+   generateRegImmInstruction(TR::InstOpCode::ADD4RegImms, node, s1idxReg, width >> shift, cg);
+   generateRegImmInstruction(TR::InstOpCode::ADD4RegImms, node, s2idxReg, width >> shift, cg);
+   generateRegImmInstruction(TR::InstOpCode::SUB4RegImms, node, ECX, 1, cg);
    generateLabelInstruction(TR::InstOpCode::JG1, node, qwordLoop, cg);
 
    // Compare each byte
    generateLabelInstruction(TR::InstOpCode::label, node, byteStart, cg);
-   generateRegRegInstruction(TR::InstOpCode::MOVRegReg(), node, ECX, s2lenReg, cg);
-   generateRegImmInstruction(TR::InstOpCode::SUBRegImm4(), node, ECX, 1, cg); // 1st char has already matched
-   generateRegImmInstruction(TR::InstOpCode::ANDRegImm4(), node, ECX, 0xf, cg);
+   generateRegRegInstruction(TR::InstOpCode::MOV4RegReg, node, ECX, s2lenReg, cg);
+   generateRegImmInstruction(TR::InstOpCode::SUB4RegImms, node, ECX, 1, cg); // 1st char has already matched
+   generateRegImmInstruction(TR::InstOpCode::AND4RegImms, node, ECX, 0xf, cg);
    generateLabelInstruction(TR::InstOpCode::JE1, node, doneLabel, cg); // resultReg has the result
 
    generateLabelInstruction(TR::InstOpCode::label, node, byteLoop, cg);
@@ -10376,21 +10376,21 @@ static TR::Register* inlineIntrinsicStringIndexOfString(TR::Node* node, TR::Code
       }
    generateLabelInstruction(TR::InstOpCode::JNE1, node, unmatchLabel, cg);
 
-   generateRegImmInstruction(TR::InstOpCode::ADDRegImm4(), node, s1idxReg, 1, cg);
-   generateRegImmInstruction(TR::InstOpCode::ADDRegImm4(), node, s2idxReg, 1, cg);
-   generateRegImmInstruction(TR::InstOpCode::SUBRegImm4(), node, ECX, 1, cg);
+   generateRegImmInstruction(TR::InstOpCode::ADD4RegImms, node, s1idxReg, 1, cg);
+   generateRegImmInstruction(TR::InstOpCode::ADD4RegImms, node, s2idxReg, 1, cg);
+   generateRegImmInstruction(TR::InstOpCode::SUB4RegImms, node, ECX, 1, cg);
    generateLabelInstruction(TR::InstOpCode::JG1, node, byteLoop, cg);
 
    generateLabelInstruction(TR::InstOpCode::JMP1, node, doneLabel, cg); // resultReg has the result
 
    // unmatch
    generateLabelInstruction(TR::InstOpCode::label, node, unmatchLabel, cg);
-   generateRegImmInstruction(TR::InstOpCode::ADDRegImm4(), node, resultReg, 1, cg);
+   generateRegImmInstruction(TR::InstOpCode::ADD4RegImms, node, resultReg, 1, cg);
    generateLabelInstruction(TR::InstOpCode::JMP4, node, outerLoopLabel, cg);
 
    // not found
    generateLabelInstruction(TR::InstOpCode::label, node, notFoundLabel, cg);
-   generateRegImmInstruction(TR::InstOpCode::MOVRegImm4(), node, resultReg, -1, cg);
+   generateRegImmInstruction(TR::InstOpCode::MOV4RegImm4, node, resultReg, -1, cg);
    // fall through to doneLabel
 
    generateLabelInstruction(TR::InstOpCode::label, node, doneLabel, dependencies, cg);
