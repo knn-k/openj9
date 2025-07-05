@@ -6598,8 +6598,6 @@ static TR::Register *inlineIntrinsicStringIndexOfString(TR::Node *node, TR::Code
       fprintf(stderr, "*Latin1.indexOfString(): %s @%s\n", cg->comp()->signature(), cg->comp()->getHotnessName());
       }
 
-   TR_ASSERT_FATAL(!TR::Compiler->om.isOffHeapAllocationEnabled(), "Off-heap allocation is not supported");
-
    // This evaluator function handles different indexOf() intrinsics, some of which are static calls without a
    // receiver. Hence, the need for static call check.
    const bool isStaticCall = node->getSymbolReference()->getSymbol()->castToMethodSymbol()->isStatic();
@@ -6693,9 +6691,20 @@ static TR::Register *inlineIntrinsicStringIndexOfString(TR::Node *node, TR::Code
    const int32_t vecWidth = 16;
 
    // Adresses of array elements
-   int32_t hdrSize = static_cast<int32_t>(TR::Compiler->om.contiguousArrayHeaderSizeInBytes());
-   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addimmx, node, s1addrReg, s1Reg, hdrSize);
-   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addimmx, node, s2addrReg, s2Reg, hdrSize);
+#ifdef J9VM_GC_SPARSE_HEAP_ALLOCATION
+   if (TR::Compiler->om.isOffHeapAllocationEnabled())
+      {
+      uintptr_t dataAddrOffset = cg->comp()->fej9()->getOffsetOfContiguousDataAddrField();
+      generateTrg1MemInstruction(cg, TR::InstOpCode::ldrimmx, node, s1addrReg, TR::MemoryReference::createWithDisplacement(cg, s1Reg, dataAddrOffset));
+      generateTrg1MemInstruction(cg, TR::InstOpCode::ldrimmx, node, s2addrReg, TR::MemoryReference::createWithDisplacement(cg, s2Reg, dataAddrOffset));
+      }
+   else
+#endif /* J9VM_GC_SPARSE_HEAP_ALLOCATION */
+      {
+      int32_t hdrSize = static_cast<int32_t>(TR::Compiler->om.contiguousArrayHeaderSizeInBytes());
+      generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addimmx, node, s1addrReg, s1Reg, hdrSize);
+      generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addimmx, node, s2addrReg, s2Reg, hdrSize);
+      }
 
    // First character of s2
    generateTrg1MemInstruction(cg, TR::InstOpCode::ldrbimm, node, tmp1Reg, TR::MemoryReference::createWithDisplacement(cg, s2addrReg, 0));
