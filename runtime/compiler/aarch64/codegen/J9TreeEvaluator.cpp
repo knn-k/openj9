@@ -7138,6 +7138,152 @@ static TR::Register *inlineStringLatin1Inflate(TR::Node *node, TR::CodeGenerator
    return NULL;
    }
 
+/**
+ * \brief
+ *   Generate inlined instructions equivalent to java/lang/StringCoding.hasNegatives or java/lang/StringCoding.countPositives
+ *
+ * \param node
+ *   The tree node
+ *
+ * \param recognizedMethod
+ *   The method being inlined, should be either hasNegatives or countPositives
+ *
+ * \param cg
+ *   The Code Generator
+ *
+ * Note that this version does not support discontiguous arrays
+ */
+static TR::Register *inlineHasNegativesOrCountPositives(TR::Node *node, bool isHasNegatives, TR::CodeGenerator *cg)
+   {
+   TR_ASSERT_FATAL(!TR::Compiler->om.canGenerateArraylets(), "Discontiguous array is not supported");
+
+   // Labels
+   TR::LabelSymbol *startLabel = generateLabelSymbol(cg);
+   TR::LabelSymbol *doneLabel = generateLabelSymbol(cg);
+   TR::LabelSymbol *loop16Label = generateLabelSymbol(cg);
+   TR::LabelSymbol *residueLabel = generateLabelSymbol(cg);
+   TR::LabelSymbol *loop1Label = generateLabelSymbol(cg);
+   TR::LabelSymbol *returnLabel1 = generateLabelSymbol(cg);
+   TR::LabelSymbol *returnLabel2 = generateLabelSymbol(cg);
+   TR::LabelSymbol *returnLabel3 = generateLabelSymbol(cg);
+
+   startLabel->setStartInternalControlFlow();
+   doneLabel->setEndInternalControlFlow();
+
+   // Registers
+   TR::Register *arrayReg = cg->evaluate(node->getChild(0));
+   TR::Register *offsetReg = cg->evaluate(node->getChild(1));
+   TR::Register *lengthReg = cg->evaluate(node->getChild(2));
+
+   TR::Register *dataAddrReg = cg->allocateRegister(TR_GPR);
+   TR::Register *indexReg = cg->allocateRegister(TR_GPR);
+   TR::Register *countReg = cg->allocateRegister(TR_GPR);
+   TR::Register *tmpReg = cg->allocateRegister(TR_GPR);
+   TR::Register *vtmpReg = cg->allocateRegister(TR_VRF);
+
+   TR::RegisterDependencyConditions *dependencies = new (cg->trHeapMemory()) TR::RegisterDependencyConditions(7, 7, cg->trMemory());
+   dependencies->addPreCondition(offsetReg, TR::RealRegister::NoReg);
+   dependencies->addPreCondition(lengthReg, TR::RealRegister::NoReg);
+   dependencies->addPreCondition(dataAddrReg, TR::RealRegister::NoReg);
+   dependencies->addPreCondition(indexReg, TR::RealRegister::NoReg);
+   dependencies->addPreCondition(countReg, TR::RealRegister::NoReg);
+   dependencies->addPreCondition(tmpReg, TR::RealRegister::NoReg);
+   dependencies->addPreCondition(vtmpReg, TR::RealRegister::NoReg);
+
+   dependencies->addPostCondition(offsetReg, TR::RealRegister::NoReg);
+   dependencies->addPostCondition(lengthReg, TR::RealRegister::NoReg);
+   dependencies->addPostCondition(dataAddrReg, TR::RealRegister::NoReg);
+   dependencies->addPostCondition(indexReg, TR::RealRegister::NoReg);
+   dependencies->addPostCondition(countReg, TR::RealRegister::NoReg);
+   dependencies->addPostCondition(tmpReg, TR::RealRegister::NoReg);
+   dependencies->addPostCondition(vtmpReg, TR::RealRegister::NoReg);
+
+   generateLabelInstruction(cg, TR::InstOpCode::label, node, startLabel);
+
+   // Address of array elements
+#ifdef J9VM_GC_SPARSE_HEAP_ALLOCATION
+   if (TR::Compiler->om.isOffHeapAllocationEnabled())
+      {
+      generateTrg1MemInstruction(cg, TR::InstOpCode::ldrimmx, node, dataAddrReg, TR::MemoryReference::createWithDisplacement(cg, arrayReg, cg->comp()->fej9()->getOffsetOfContiguousDataAddrField()));
+      }
+   else
+#endif /* J9VM_GC_SPARSE_HEAP_ALLOCATION */
+      {
+      generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addimmx, node, dataAddrReg, arrayReg, TR::Compiler->om.contiguousArrayHeaderSizeInBytes());
+      }
+
+   generateMovInstruction(cg, node, indexReg, offsetReg);
+   generateLogicalShiftRightImmInstruction(cg, node, countReg, lengthReg, 4); // div by 16
+   generateCompareBranchInstruction(cg, TR::InstOpCode::cbzw, node, countReg, residueLabel);
+
+   generateLabelInstruction(cg, TR::InstOpCode::label, node, loop16Label);
+   generateTrg1MemInstruction(cg, TR::InstOpCode::vldroffq, node, vtmpReg, TR::MemoryReference::createWithIndexReg(cg, dataAddrReg, indexReg));
+   generateVectorShiftImmediateInstruction(cg, TR::InstOpCode::vushr16b, node, vtmpReg, vtmpReg, 7); // Extract sign bit
+   generateTrg1Src1Instruction(cg, TR::InstOpCode::vaddv16b, node, vtmpReg, vtmpReg);
+   generateMovVectorElementToGPRInstruction(cg, TR::InstOpCode::umovwb, node, tmpReg, vtmpReg, 0);
+   generateCompareBranchInstruction(cg, TR::InstOpCode::cbnzw, node, tmpReg, isHasNegatives ? returnLabel3 : returnLabel2);
+   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addimmw, node, indexReg, indexReg, 16);
+   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::subsimmw, node, countReg, countReg, 1);
+   generateConditionalBranchInstruction(cg, TR::InstOpCode::b_cond, node, loop16Label, TR::CC_NE);
+
+   generateLabelInstruction(cg, TR::InstOpCode::label, node, residueLabel);
+   generateLogicalImmInstruction(cg, TR::InstOpCode::andimmw, node, countReg, lengthReg, false, 3); // N = false, immr:imms = 3 for immediate value 0xf
+   generateCompareBranchInstruction(cg, TR::InstOpCode::cbzw, node, countReg, returnLabel1);
+
+   generateLabelInstruction(cg, TR::InstOpCode::label, node, loop1Label);
+   generateTrg1MemInstruction(cg, TR::InstOpCode::ldrsboffw, node, tmpReg, TR::MemoryReference::createWithIndexReg(cg, dataAddrReg, indexReg));
+   generateCompareImmInstruction(cg, node, tmpReg, 0, /* is64bit */ false);
+   generateConditionalBranchInstruction(cg, TR::InstOpCode::b_cond, node, returnLabel2, TR::CC_LT);
+   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addimmw, node, indexReg, indexReg, 1);
+   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::subsimmw, node, countReg, countReg, 1);
+   generateConditionalBranchInstruction(cg, TR::InstOpCode::b_cond, node, loop1Label, TR::CC_NE);
+
+   // Found no negative value
+   generateLabelInstruction(cg, TR::InstOpCode::label, node, returnLabel1);
+   if (isHasNegatives)
+      {
+      loadConstant32(cg, node, 0, indexReg); // false
+      }
+   else
+      {
+      generateMovInstruction(cg, node, indexReg, lengthReg);
+      }
+   generateLabelInstruction(cg, TR::InstOpCode::b, node, doneLabel);
+
+   // Found a negative value in the vector loop for countPositives()
+   // Continue to the byte loop for adjusting the index
+   generateLabelInstruction(cg, TR::InstOpCode::label, node, returnLabel2);
+   loadConstant32(cg, node, 16, countReg);
+   generateLabelInstruction(cg, TR::InstOpCode::b, node, loop1Label);
+
+   // Found a negative value in hasNegatives() or in the byte loop for countPositives()
+   generateLabelInstruction(cg, TR::InstOpCode::label, node, returnLabel3);
+   if (isHasNegatives)
+      {
+      loadConstant32(cg, node, 1, indexReg); // true
+      }
+   else
+      {
+      generateTrg1Src2Instruction(cg, TR::InstOpCode::subw, node, indexReg, indexReg, offsetReg);
+      }
+   // fall through to doneLabel
+
+   generateLabelInstruction(cg, TR::InstOpCode::label, node, doneLabel, dependencies);
+
+   cg->stopUsingRegister(dataAddrReg);
+   cg->stopUsingRegister(countReg);
+   cg->stopUsingRegister(tmpReg);
+   cg->stopUsingRegister(vtmpReg);
+
+   node->setRegister(indexReg);
+
+   for (int32_t i = 0; i < node->getNumChildren(); i++)
+      {
+      cg->decReferenceCount(node->getChild(i));
+      }
+   return indexReg;
+   }
+
 bool
 J9::ARM64::CodeGenerator::inlineDirectCall(TR::Node *node, TR::Register *&resultReg)
    {
@@ -7219,6 +7365,24 @@ J9::ARM64::CodeGenerator::inlineDirectCall(TR::Node *node, TR::Register *&result
                }
             break;
             }
+
+         case TR::java_lang_StringCoding_hasNegatives:
+            if (cg->getSupportsInlineStringCodingHasNegatives())
+               {
+               resultReg = inlineHasNegativesOrCountPositives(node, true, cg);
+               return true;
+               }
+            break;
+
+#if JAVA_SPEC_VERSION >= 19
+         case TR::java_lang_StringCoding_countPositives:
+            if (cg->getSupportsInlineStringCodingCountPositives())
+               {
+               resultReg = inlineHasNegativesOrCountPositives(node, false, cg);
+               return true;
+               }
+            break;
+#endif /* JAVA_SPEC_VERSION >= 19 */
 
          case TR::java_nio_Bits_keepAlive:
          case TR::java_lang_ref_Reference_reachabilityFence:

@@ -115,6 +115,17 @@ J9::ARM64::CodeGenerator::initialize()
       {
       cg->setSupportsInlineUnsafeCompareAndExchange();
       }
+
+   static bool disableInlineStringCodingHasNegatives = feGetEnv("TR_DisableInlineStringCodingHasNegatives") != NULL;
+   if (!TR::Compiler->om.canGenerateArraylets() && !disableInlineStringCodingHasNegatives)
+      {
+      cg->setSupportsInlineStringCodingHasNegatives();
+      }
+   static bool disableInlineStringCodingCountPositives = feGetEnv("TR_DisableInlineStringCodingCountPositives") != NULL;
+   if (!TR::Compiler->om.canGenerateArraylets() && !disableInlineStringCodingCountPositives)
+      {
+      cg->setSupportsInlineStringCodingCountPositives();
+      }
    }
 
 TR::Linkage *
