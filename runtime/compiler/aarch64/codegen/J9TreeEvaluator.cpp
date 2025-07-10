@@ -7157,15 +7157,19 @@ static TR::Register *inlineHasNegativesOrCountPositives(TR::Node *node, bool isH
    {
    TR_ASSERT_FATAL(!TR::Compiler->om.canGenerateArraylets(), "Discontiguous array is not supported");
 
+   // fprintf(stderr, "*%s: %s @%s\n", isHasNegatives ? "hasNegatives()" : "countPositives()", cg->comp()->signature(), cg->comp()->getHotnessName());
+
    // Labels
    TR::LabelSymbol *startLabel = generateLabelSymbol(cg);
    TR::LabelSymbol *doneLabel = generateLabelSymbol(cg);
    TR::LabelSymbol *loop16Label = generateLabelSymbol(cg);
+   TR::LabelSymbol *lessThan16Label = generateLabelSymbol(cg);
    TR::LabelSymbol *residueLabel = generateLabelSymbol(cg);
    TR::LabelSymbol *loop1Label = generateLabelSymbol(cg);
    TR::LabelSymbol *returnLabel1 = generateLabelSymbol(cg);
    TR::LabelSymbol *returnLabel2 = generateLabelSymbol(cg);
    TR::LabelSymbol *returnLabel3 = generateLabelSymbol(cg);
+   TR::LabelSymbol *returnLabel4 = generateLabelSymbol(cg);
 
    startLabel->setStartInternalControlFlow();
    doneLabel->setEndInternalControlFlow();
@@ -7214,26 +7218,44 @@ static TR::Register *inlineHasNegativesOrCountPositives(TR::Node *node, bool isH
 
    generateMovInstruction(cg, node, indexReg, offsetReg);
    generateLogicalShiftRightImmInstruction(cg, node, countReg, lengthReg, 4); // div by 16
-   generateCompareBranchInstruction(cg, TR::InstOpCode::cbzw, node, countReg, residueLabel);
+   generateCompareBranchInstruction(cg, TR::InstOpCode::cbzw, node, countReg, lessThan16Label);
 
+   // Loop for 128-bit vector comparison
    generateLabelInstruction(cg, TR::InstOpCode::label, node, loop16Label);
    generateTrg1MemInstruction(cg, TR::InstOpCode::vldroffq, node, vtmpReg, TR::MemoryReference::createWithIndexReg(cg, dataAddrReg, indexReg));
-   generateVectorShiftImmediateInstruction(cg, TR::InstOpCode::vushr16b, node, vtmpReg, vtmpReg, 7); // Extract sign bit
-   generateTrg1Src1Instruction(cg, TR::InstOpCode::vaddv16b, node, vtmpReg, vtmpReg);
-   generateMovVectorElementToGPRInstruction(cg, TR::InstOpCode::umovwb, node, tmpReg, vtmpReg, 0);
-   generateCompareBranchInstruction(cg, TR::InstOpCode::cbnzw, node, tmpReg, isHasNegatives ? returnLabel3 : returnLabel2);
+   generateTrg1Src1Instruction(cg, TR::InstOpCode::vcmlt16b_zero, node, vtmpReg, vtmpReg); // lanes with negative numbers are set to 0xFF
+   generateVectorShiftImmediateInstruction(cg, TR::InstOpCode::vshrn_8b, node, vtmpReg, vtmpReg, 4); // 8 bits x 16 -> 4 bits x 16
+   generateMovVectorElementToGPRInstruction(cg, TR::InstOpCode::umovxd, node, tmpReg, vtmpReg, 0);
+   generateCompareBranchInstruction(cg, TR::InstOpCode::cbnzx, node, tmpReg, isHasNegatives ? returnLabel4 : returnLabel2);
    generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addimmw, node, indexReg, indexReg, 16);
    generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::subsimmw, node, countReg, countReg, 1);
    generateConditionalBranchInstruction(cg, TR::InstOpCode::b_cond, node, loop16Label, TR::CC_NE);
 
-   generateLabelInstruction(cg, TR::InstOpCode::label, node, residueLabel);
+   // 64-bit vector comparison
+   generateLabelInstruction(cg, TR::InstOpCode::label, node, lessThan16Label);
    generateLogicalImmInstruction(cg, TR::InstOpCode::andimmw, node, countReg, lengthReg, false, 3); // N = false, immr:imms = 3 for immediate value 0xf
+   generateCompareImmInstruction(cg, node, countReg, 8);
+   generateConditionalBranchInstruction(cg, TR::InstOpCode::b_cond, node, residueLabel, TR::CC_LT);
+
+   generateTrg1MemInstruction(cg, TR::InstOpCode::vldroffd, node, vtmpReg, TR::MemoryReference::createWithIndexReg(cg, dataAddrReg, indexReg));
+#if 0
+   generateTrg1Src1Instruction(cg, TR::InstOpCode::vcmlt8b_zero, node, vtmpReg, vtmpReg); // lanes with negative numbers are set to 0xFF
+#else
+   generateTrg1Src1Instruction(cg, TR::InstOpCode::vcmlt16b_zero, node, vtmpReg, vtmpReg); // lanes with negative numbers are set to 0xFF
+#endif
+   generateMovVectorElementToGPRInstruction(cg, TR::InstOpCode::umovxd, node, tmpReg, vtmpReg, 0);
+   generateCompareBranchInstruction(cg, TR::InstOpCode::cbnzx, node, tmpReg, isHasNegatives ? returnLabel4 : returnLabel3);
+   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addimmw, node, indexReg, indexReg, 8);
+   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::subsimmw, node, countReg, countReg, 8);
+
+   // Less than 8 bytes remaining
+   generateLabelInstruction(cg, TR::InstOpCode::label, node, residueLabel);
    generateCompareBranchInstruction(cg, TR::InstOpCode::cbzw, node, countReg, returnLabel1);
 
    generateLabelInstruction(cg, TR::InstOpCode::label, node, loop1Label);
    generateTrg1MemInstruction(cg, TR::InstOpCode::ldrsboffw, node, tmpReg, TR::MemoryReference::createWithIndexReg(cg, dataAddrReg, indexReg));
    generateCompareImmInstruction(cg, node, tmpReg, 0, /* is64bit */ false);
-   generateConditionalBranchInstruction(cg, TR::InstOpCode::b_cond, node, returnLabel2, TR::CC_LT);
+   generateConditionalBranchInstruction(cg, TR::InstOpCode::b_cond, node, returnLabel4, TR::CC_LT);
    generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addimmw, node, indexReg, indexReg, 1);
    generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::subsimmw, node, countReg, countReg, 1);
    generateConditionalBranchInstruction(cg, TR::InstOpCode::b_cond, node, loop1Label, TR::CC_NE);
@@ -7250,14 +7272,31 @@ static TR::Register *inlineHasNegativesOrCountPositives(TR::Node *node, bool isH
       }
    generateLabelInstruction(cg, TR::InstOpCode::b, node, doneLabel);
 
-   // Found a negative value in the vector loop for countPositives()
-   // Continue to the byte loop for adjusting the index
-   generateLabelInstruction(cg, TR::InstOpCode::label, node, returnLabel2);
-   loadConstant32(cg, node, 16, countReg);
-   generateLabelInstruction(cg, TR::InstOpCode::b, node, loop1Label);
+   if (!isHasNegatives)
+      {
+      // countPositives() only:
 
-   // Found a negative value in hasNegatives() or in the byte loop for countPositives()
-   generateLabelInstruction(cg, TR::InstOpCode::label, node, returnLabel3);
+      // Found a negative value in the loop of 128-bit vector comparison
+      generateLabelInstruction(cg, TR::InstOpCode::label, node, returnLabel2);
+      generateTrg1Src1Instruction(cg, TR::InstOpCode::rbitx, node, tmpReg, tmpReg);
+      generateTrg1Src1Instruction(cg, TR::InstOpCode::clzx, node, tmpReg, tmpReg);
+      generateLogicalShiftRightImmInstruction(cg, node, tmpReg, tmpReg, 2, /* is64bit */ false); // div by 4
+      generateTrg1Src2Instruction(cg, TR::InstOpCode::addw, node, indexReg, indexReg, tmpReg);
+      generateTrg1Src2Instruction(cg, TR::InstOpCode::subw, node, indexReg, indexReg, offsetReg);
+      generateLabelInstruction(cg, TR::InstOpCode::b, node, doneLabel);
+
+      // Found a negative value in 64-bit vector comparison
+      generateLabelInstruction(cg, TR::InstOpCode::label, node, returnLabel3);
+      generateTrg1Src1Instruction(cg, TR::InstOpCode::rbitx, node, tmpReg, tmpReg);
+      generateTrg1Src1Instruction(cg, TR::InstOpCode::clzx, node, tmpReg, tmpReg);
+      generateLogicalShiftRightImmInstruction(cg, node, tmpReg, tmpReg, 3, /* is64bit */ false); // div by 8
+      generateTrg1Src2Instruction(cg, TR::InstOpCode::addw, node, indexReg, indexReg, tmpReg);
+      generateTrg1Src2Instruction(cg, TR::InstOpCode::subw, node, indexReg, indexReg, offsetReg);
+      generateLabelInstruction(cg, TR::InstOpCode::b, node, doneLabel);
+      }
+
+   // Found a negative value in hasNegatives() or in the byte comparison loop for countPositives()
+   generateLabelInstruction(cg, TR::InstOpCode::label, node, returnLabel4);
    if (isHasNegatives)
       {
       loadConstant32(cg, node, 1, indexReg); // true
