@@ -6611,7 +6611,7 @@ static TR::Register* inlineIntrinsicIndexOf(TR::Node* node, TR::CodeGenerator* c
  *
  * Note that this version does not support discontiguous arrays
  */
-static TR::Register *inlineIntrinsicStringIndexOfString(TR::Node *node, TR::CodeGenerator *cg)
+static TR::Register *inlineIntrinsicStringIndexOfString(TR::Node *node, TR::CodeGenerator *cg, bool isLatin1)
    {
    static bool verboseInlineStrIdxOfStr = (feGetEnv("TR_verboseInlineStrIdxOfStr") != NULL);
    if (verboseInlineStrIdxOfStr)
@@ -6712,6 +6712,7 @@ static TR::Register *inlineIntrinsicStringIndexOfString(TR::Node *node, TR::Code
    generateLabelInstruction(cg, TR::InstOpCode::label, node, startLabel);
 
    const int32_t vecWidth = 16;
+   const int32_t shift = isLatin1 ? 0 : 1;
 
    // Addresses of array elements
 #ifdef J9VM_GC_SPARSE_HEAP_ALLOCATION
@@ -6730,8 +6731,10 @@ static TR::Register *inlineIntrinsicStringIndexOfString(TR::Node *node, TR::Code
       }
 
    // First character of s2
-   generateTrg1MemInstruction(cg, TR::InstOpCode::ldrbimm, node, tmp1Reg, TR::MemoryReference::createWithDisplacement(cg, s2addrReg, 0));
-   generateTrg1Src1Instruction(cg, TR::InstOpCode::vdup16b, node, s2firstCharReg, tmp1Reg);
+   generateTrg1MemInstruction(cg, isLatin1 ? TR::InstOpCode::ldrbimm : TR::InstOpCode::ldrhimm, node,
+                              tmp1Reg, TR::MemoryReference::createWithDisplacement(cg, s2addrReg, 0));
+   generateTrg1Src1Instruction(cg, isLatin1 ? TR::InstOpCode::vdup16b : TR::InstOpCode::vdup8h, node,
+                               s2firstCharReg, tmp1Reg);
 
    // Calculate max
    generateTrg1Src2Instruction(cg, TR::InstOpCode::subw, node, maxReg, s1lenReg, s2lenReg);
@@ -6748,14 +6751,15 @@ static TR::Register *inlineIntrinsicStringIndexOfString(TR::Node *node, TR::Code
 
    generateTrg1Src2Instruction(cg, TR::InstOpCode::subx, node, tmp1Reg, tmp1Reg, tmp2Reg); // tmp1Reg is 16-byte aligned
    generateTrg1MemInstruction(cg, TR::InstOpCode::vldrimmq, node, vtmp1Reg, TR::MemoryReference::createWithDisplacement(cg, tmp1Reg, 0));
-   generateTrg1Src2Instruction(cg, TR::InstOpCode::vcmeq16b, node, vtmp1Reg, vtmp1Reg, s2firstCharReg);
+   generateTrg1Src2Instruction(cg, isLatin1 ? TR::InstOpCode::vcmeq16b : TR::InstOpCode::vcmeq8h, node,
+                               vtmp1Reg, vtmp1Reg, s2firstCharReg);
    generateVectorShiftImmediateInstruction(cg, TR::InstOpCode::vshrn_8b, node, vtmp1Reg, vtmp1Reg, 4); // 8 bits x 16 -> 4 bits x 16
    generateMovVectorElementToGPRInstruction(cg, TR::InstOpCode::umovxd, node, tmp1Reg, vtmp1Reg, 0);
    generateLogicalShiftLeftImmInstruction(cg, node, s1idxReg, tmp2Reg, 2, /* is64bit */ false); // s1idxReg is used for other purpose here
    generateTrg1Src2Instruction(cg, TR::InstOpCode::lsrvx, node, tmp1Reg, tmp1Reg, s1idxReg);
    generateCompareBranchInstruction(cg, TR::InstOpCode::cbnzx, node, tmp1Reg, firstCharMatchedLabel);
 
-   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addimmw, node, resultReg, resultReg, vecWidth);
+   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addimmw, node, resultReg, resultReg, vecWidth >> shift);
    generateTrg1Src2Instruction(cg, TR::InstOpCode::subw, node, resultReg, resultReg, tmp2Reg);
 
    generateCompareInstruction(cg, node, resultReg, maxReg, /* is64bit */ false);
@@ -6763,12 +6767,21 @@ static TR::Register *inlineIntrinsicStringIndexOfString(TR::Node *node, TR::Code
 
    // (s1addrReg + resultReg) is 16-byte aligned here
    generateLabelInstruction(cg, TR::InstOpCode::label, node, firstCharLoopLabel);
-   generateTrg1MemInstruction(cg, TR::InstOpCode::vldroffq, node, vtmp1Reg, TR::MemoryReference::createWithIndexReg(cg, s1addrReg, resultReg));
-   generateTrg1Src2Instruction(cg, TR::InstOpCode::vcmeq16b, node, vtmp1Reg, vtmp1Reg, s2firstCharReg);
+   if (isLatin1)
+      {
+      generateTrg1MemInstruction(cg, TR::InstOpCode::vldroffq, node, vtmp1Reg, TR::MemoryReference::createWithIndexReg(cg, s1addrReg, resultReg));
+      }
+   else
+      {
+      generateLogicalShiftLeftImmInstruction(cg, node, s1idxReg, resultReg, 1, /* is64bit */ false);
+      generateTrg1MemInstruction(cg, TR::InstOpCode::vldroffq, node, vtmp1Reg, TR::MemoryReference::createWithIndexReg(cg, s1addrReg, s1idxReg));
+      }
+   generateTrg1Src2Instruction(cg, isLatin1 ? TR::InstOpCode::vcmeq16b : TR::InstOpCode::vcmeq8h, node,
+                               vtmp1Reg, vtmp1Reg, s2firstCharReg);
    generateVectorShiftImmediateInstruction(cg, TR::InstOpCode::vshrn_8b, node, vtmp1Reg, vtmp1Reg, 4); // 8 bits x 16 -> 4 bits x 16
    generateMovVectorElementToGPRInstruction(cg, TR::InstOpCode::umovxd, node, tmp1Reg, vtmp1Reg, 0);
    generateCompareBranchInstruction(cg, TR::InstOpCode::cbnzx, node, tmp1Reg, firstCharMatchedLabel);
-   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addimmw, node, resultReg, resultReg, vecWidth);
+   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addimmw, node, resultReg, resultReg, vecWidth >> shift);
    generateCompareInstruction(cg, node, resultReg, maxReg, /* is64bit */ false);
    generateConditionalBranchInstruction(cg, TR::InstOpCode::b_cond, node, firstCharLoopLabel, TR::CC_LE);
    generateLabelInstruction(cg, TR::InstOpCode::b, node, notFoundLabel);
@@ -6777,7 +6790,7 @@ static TR::Register *inlineIntrinsicStringIndexOfString(TR::Node *node, TR::Code
    generateLabelInstruction(cg, TR::InstOpCode::label, node, firstCharMatchedLabel);
    generateTrg1Src1Instruction(cg, TR::InstOpCode::rbitx, node, tmp1Reg, tmp1Reg);
    generateTrg1Src1Instruction(cg, TR::InstOpCode::clzx, node, tmp1Reg, tmp1Reg);
-   generateLogicalShiftRightImmInstruction(cg, node, tmp1Reg, tmp1Reg, 2, /* is64bit */ true); // div by 4
+   generateLogicalShiftRightImmInstruction(cg, node, tmp1Reg, tmp1Reg, isLatin1 ? 2 : 3, /* is64bit */ true); // div by 4 (Latin1) or 8 (UTF16)
    generateTrg1Src2Instruction(cg, TR::InstOpCode::addx, node, resultReg, resultReg, tmp1Reg);
 
    generateCompareInstruction(cg, node, resultReg, maxReg, /* is64bit */ false);
@@ -6793,25 +6806,45 @@ static TR::Register *inlineIntrinsicStringIndexOfString(TR::Node *node, TR::Code
 
    // Vector comparison
    generateLabelInstruction(cg, TR::InstOpCode::label, node, arrayCmpVectorLoopLabel);
-   generateTrg1MemInstruction(cg, TR::InstOpCode::vldroffq, node, vtmp1Reg, TR::MemoryReference::createWithIndexReg(cg, s1addrReg, s1idxReg));
-   generateTrg1MemInstruction(cg, TR::InstOpCode::vldroffq, node, vtmp2Reg, TR::MemoryReference::createWithIndexReg(cg, s2addrReg, s2idxReg));
+   if (isLatin1)
+      {
+      generateTrg1MemInstruction(cg, TR::InstOpCode::vldroffq, node, vtmp1Reg, TR::MemoryReference::createWithIndexReg(cg, s1addrReg, s1idxReg));
+      generateTrg1MemInstruction(cg, TR::InstOpCode::vldroffq, node, vtmp2Reg, TR::MemoryReference::createWithIndexReg(cg, s2addrReg, s2idxReg));
+      }
+   else
+      {
+      generateLogicalShiftLeftImmInstruction(cg, node, tmp1Reg, s1idxReg, 1, /* is64bit */ false);
+      generateTrg1MemInstruction(cg, TR::InstOpCode::vldroffq, node, vtmp1Reg, TR::MemoryReference::createWithIndexReg(cg, s1addrReg, tmp1Reg));
+      generateLogicalShiftLeftImmInstruction(cg, node, tmp2Reg, s2idxReg, 1, /* is64bit */ false);
+      generateTrg1MemInstruction(cg, TR::InstOpCode::vldroffq, node, vtmp2Reg, TR::MemoryReference::createWithIndexReg(cg, s2addrReg, tmp2Reg));
+      }
    generateTrg1Src2Instruction(cg, TR::InstOpCode::vcmeq16b, node, vtmp1Reg, vtmp1Reg, vtmp2Reg);
    generateVectorShiftImmediateInstruction(cg, TR::InstOpCode::vshrn_8b, node, vtmp1Reg, vtmp1Reg, 4); // 8 bits x 16 -> 4 bits x 16
    generateMovVectorElementToGPRInstruction(cg, TR::InstOpCode::umovxd, node, tmp1Reg, vtmp1Reg, 0);
    generateCompareImmInstruction(cg, node, tmp1Reg, -1, /* is64bit */ true);
    generateConditionalBranchInstruction(cg, TR::InstOpCode::b_cond, node, unmatchedLabel, TR::CC_NE);
-   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addimmw, node, s1idxReg, s1idxReg, vecWidth);
-   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addimmw, node, s2idxReg, s2idxReg, vecWidth);
+   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addimmw, node, s1idxReg, s1idxReg, vecWidth >> shift);
+   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addimmw, node, s2idxReg, s2idxReg, vecWidth >> shift);
    generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::subsimmw, node, tmp2Reg, tmp2Reg, 1);
    generateConditionalBranchInstruction(cg, TR::InstOpCode::b_cond, node, arrayCmpVectorLoopLabel, TR::CC_NE);
 
-   // Byte comparison
+   // Byte/char comparison
    generateLabelInstruction(cg, TR::InstOpCode::label, node, arrayCmpByteLoopLabel);
    generateCompareInstruction(cg, node, s2lenReg, s2idxReg);
    generateConditionalBranchInstruction(cg, TR::InstOpCode::b_cond, node, doneLabel, TR::CC_LE); // resultReg has the result
 
-   generateTrg1MemInstruction(cg, TR::InstOpCode::ldrbimm, node, tmp1Reg, TR::MemoryReference::createWithIndexReg(cg, s1addrReg, s1idxReg));
-   generateTrg1MemInstruction(cg, TR::InstOpCode::ldrbimm, node, tmp2Reg, TR::MemoryReference::createWithIndexReg(cg, s2addrReg, s2idxReg));
+   if (isLatin1)
+      {
+      generateTrg1MemInstruction(cg, TR::InstOpCode::ldrbimm, node, tmp1Reg, TR::MemoryReference::createWithIndexReg(cg, s1addrReg, s1idxReg));
+      generateTrg1MemInstruction(cg, TR::InstOpCode::ldrbimm, node, tmp2Reg, TR::MemoryReference::createWithIndexReg(cg, s2addrReg, s2idxReg));
+      }
+   else
+      {
+      generateLogicalShiftLeftImmInstruction(cg, node, tmp1Reg, s1idxReg, 1, /* is64bit */ false);
+      generateTrg1MemInstruction(cg, TR::InstOpCode::ldrhimm, node, tmp1Reg, TR::MemoryReference::createWithIndexReg(cg, s1addrReg, tmp1Reg));
+      generateLogicalShiftLeftImmInstruction(cg, node, tmp2Reg, s2idxReg, 1, /* is64bit */ false);
+      generateTrg1MemInstruction(cg, TR::InstOpCode::ldrhimm, node, tmp2Reg, TR::MemoryReference::createWithIndexReg(cg, s2addrReg, tmp2Reg));
+      }
    generateCompareInstruction(cg, node, tmp1Reg, tmp2Reg, /* is64bit */ false);
    generateConditionalBranchInstruction(cg, TR::InstOpCode::b_cond, node, unmatchedLabel, TR::CC_NE);
 
@@ -7176,7 +7209,16 @@ J9::ARM64::CodeGenerator::inlineDirectCall(TR::Node *node, TR::Register *&result
          case TR::com_ibm_jit_JITHelpers_intrinsicIndexOfStringLatin1:
             if (cg->getSupportsInlineStringIndexOfString())
                {
-               resultReg = inlineIntrinsicStringIndexOfString(node, cg);
+               resultReg = inlineIntrinsicStringIndexOfString(node, cg, true);
+               return true;
+               }
+         break;
+
+         case TR::java_lang_StringUTF16_indexOf:
+         case TR::com_ibm_jit_JITHelpers_intrinsicIndexOfStringUTF16:
+            if (cg->getSupportsInlineStringIndexOfString())
+               {
+               resultReg = inlineIntrinsicStringIndexOfString(node, cg, false);
                return true;
                }
             break;
