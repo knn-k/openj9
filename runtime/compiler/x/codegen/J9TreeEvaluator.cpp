@@ -10423,7 +10423,7 @@ static TR::Register* inlineIntrinsicStringIndexOfString(TR::Node* node, TR::Code
    generateRegImmInstruction(TR::InstOpCode::MOV4RegImm4, node, s2idxReg, 1, cg); // s2idx = 1
 
    generateRegMemInstruction(TR::InstOpCode::LEARegMem(), node, ECX, generateX86MemoryReference(s2lenReg, -1, cg), cg); // ECX = s2len - 1: 1st char has already matched
-   generateRegImmInstruction(TR::InstOpCode::SHR4RegImm1, node, ECX, 4, cg);
+   generateRegImmInstruction(TR::InstOpCode::SHR4RegImm1, node, ECX, 4 - shift, cg); // div by 16 or 8
    generateLabelInstruction(TR::InstOpCode::JE1, node, byteLoopLabel, cg);
 
    // Compare by 16 bytes
