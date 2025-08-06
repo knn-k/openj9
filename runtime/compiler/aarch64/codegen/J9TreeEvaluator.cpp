@@ -6318,76 +6318,18 @@ static TR::Register *inlineStringHashCode(TR::Node *node, bool isCompressed, TR:
  * @param cg: Code Generator
  * @param isLatin1: true when the string is Latin1, false when the string is UTF16
  * @returns register
+ *
+ * Note that this version does not support discontiguous arrays
  */
 static TR::Register* inlineIntrinsicIndexOf(TR::Node* node, TR::CodeGenerator* cg, bool isLatin1)
    {
-   /*
-    *   add dataAddrReg, addressReg, #headerSize                   ; get the starting address of byte array data
-    *   add endReg, dataAddrReg, lengthReg(, lsl #1 if utf16)      ; get the address of the end of the byte array
-    *   subs lengthReg, lengthReg, offsetReg
-    *   b.eq Ldone
-    *   add tmp0Reg, dataAddrReg, #16                              ; save starting address + 16 to tmp0Reg
-    *   add dataAddrReg, dataAddrReg, offsetReg(, lsl #1 if utf16)
-    *
-    *   if isLatin1
-    *     dup vtmp0Reg.16b, charReg
-    *   else
-    *     dup vtmp0Reg.8h, charReg
-    *   subs lengthReg, lengthReg (#8 if isLatin1 else #4)
-    *   ; If the length < 8bytes, then it is not guaranteed that we can read the last 16bytes because the minimum size of the array header is 8bytes.
-    *   b.lt Lessthan8
-    *   subs lengthReg, lengthReg (#8 if isLatin1 else #4)
-    *   b.lt Lresidual
-    * Loop:
-    *   subs lengthReg, lengthReg, (#16 if isLatin1 else #8)
-    *   ldr  vtmp1Reg, [dataAddrReg], #16
-    *   if isLatin1
-    *     cmeq vtmp1Reg.16b, vtmp0Reg.16b, vtmp1Reg.16b
-    *     shrn vtmp1Reg.8b, vtmp1Reg.8h, #4
-    *   else
-    *     cmeq vtmp1Reg.8h, vtmp0Reg.8h, vtmp1Reg.8h
-    *     xtn vtmp1Reg.8b, vtmp1Reg.8h
-    *   umov tmp1Reg, vtmp1Reg.d[0]
-    *   ccmp tmp1Reg, #0, #0, cs                                   ; if lengthReg < 0, clear all condition flags
-    *   b.eq Loop
-    *   cbnz tmp1Reg, Lfound
-    *   cmn lengthReg, (#16 if isLatin1 else #8)
-    *   b.eq Ldone
-    * Lresidual:
-    *   ldurq vtmp1Reg, [endReg, #-16]                             ; Read the last 16bytes. It would not a problem if original length >= 8 because we have a array header space.
-    *   if isLatin1
-    *     cmeq vtmp1Reg.16b, vtmp0Reg.16b, vtmp1Reg.16b
-    *   else
-    *     cmeq vtmp1Reg.8h, vtmp0Reg.8h, vtmp1Reg.8h
-    *   b Lmerge
-    * LessThan8:
-    *   ldurd vtmp1Reg, [endReg, #-8]
-    *   if isLatin1
-    *     cmeq vtmp1Reg.8b, vtmp0Reg.8b, vtmp1Reg.8b
-    *   else
-    *     cmeq vtmp1Reg.4h, vtmp0Reg.4h, vtmp1Reg.4h
-    * Lmerge:
-    *   add dataAddrReg, dataAddrReg, #16
-    *   neg lengthReg, lengthReg, lsl (#2 if isLatin1 else #3)     ; 64 - (4 or 8) * remaining length
-    *   if isLatin1
-    *     shrn vtmp1Reg.8b, vtmp1Reg.8h, #4
-    *   else
-    *     xtn vtmp1Reg.8b, vtmp1Reg.8h, #4
-    *   umov tmp1Reg, vtmp1Reg.d[0]
-    *   lsr tmp1Reg, tmp1Reg, lengthReg                            ; Move the comparison result of remaining data to LSB
-    *   cmp tmp1Reg, #0
-    *   b.eq Ldone
-    * Lfound:
-    *   rbit tmp1Reg, tmp1Reg
-    *   sub dataAddrReg, dataAddrReg, tmp0Reg
-    *   clz tmp1Reg, tmp1Reg
-    *   add resultReg, dataAddrReg, tmp1Reg, lsr #2
-    *   if !isLatin
-    *     lsr resultReg, resultReg, #1
-    * Ldone:
-    *   csinv resultReg, resultReg, xzr, ne
-    *
-    */
+   static bool verboseInlineStrIdxOf = (feGetEnv("TR_verboseInlineStrIdxOf") != NULL);
+   if (verboseInlineStrIdxOf)
+      {
+      fprintf(stderr, "*%s.indexOf(): %s @%s\n", isLatin1 ? "Latin1" : "UTF16", cg->comp()->signature(), cg->comp()->getHotnessName());
+      }
+
+   TR_ASSERT_FATAL(!TR::Compiler->om.canGenerateArraylets(), "Discontiguous array is not supported");
 
    // This evaluator function handles different indexOf() intrinsics, some of which are static calls without a
    // receiver. Hence, the need for static call check.
@@ -6399,28 +6341,68 @@ static TR::Register* inlineIntrinsicIndexOf(TR::Node* node, TR::CodeGenerator* c
    TR::Node *lengthNode = node->getChild(firstCallArgIdx + 3);
    TR::Register *arrayReg = cg->evaluate(arrayNode);
    TR::Register *charReg = cg->evaluate(charNode);
-   const bool isOffsetConstZero = offsetNode->isConstZeroValue();
-   TR::Register *offsetReg = isOffsetConstZero ? NULL : cg->evaluate(offsetNode);
-   TR::Register *savedLengthReg = cg->evaluate(lengthNode);
-   TR_ARM64ScratchRegisterManager *srm = cg->generateScratchRegisterManager();
-   TR::Register *dataAddrReg = (arrayNode->getReferenceCount() > 1) ? srm->findOrCreateScratchRegister() : arrayReg;
-   TR::Register *lengthReg = (lengthNode->getReferenceCount() > 1) ? srm->findOrCreateScratchRegister() : savedLengthReg;
-   TR::Register *tmp0Reg = srm->findOrCreateScratchRegister();
-   /* The live range of tmp1Reg and offsetReg does not overwrap if offsetNode's reference count is 1, so we use the same register in that case. */
-   TR::Register *tmp1Reg = ((offsetNode->getReferenceCount() > 1) || isOffsetConstZero) ? srm->findOrCreateScratchRegister() : offsetReg;
-   /* The live range of endReg and resultReg does not overwrap, so we use the same register. */
-   TR::Register *endReg = cg->allocateRegister();
-   TR::Register *resultReg = endReg;
-   TR_Debug *debugObj = cg->getDebug();
+   TR::Register *offsetReg = cg->evaluate(offsetNode);
+   TR::Register *lengthReg = cg->evaluate(lengthNode);
 
+   TR::Register *dataAddrReg = cg->allocateRegister(TR_GPR);
+   TR::Register *tmp1Reg = cg->allocateRegister(TR_GPR);
+   TR::Register *tmp2Reg = cg->allocateRegister(TR_GPR);
+   TR::Register *tmp3Reg = cg->allocateRegister(TR_GPR);
+   TR::Register *vtmp1Reg = cg->allocateRegister(TR_VRF);
+   TR::Register *vtmp2Reg = cg->allocateRegister(TR_VRF);
+
+   TR::Register *resultReg;
+   if (offsetNode->getReferenceCount() > 1)
+      {
+      resultReg = cg->allocateRegister(TR_GPR);
+      generateMovInstruction(cg, node, resultReg, offsetReg);
+      }
+   else
+      {
+      resultReg = offsetReg;
+      }
+
+   TR::RegisterDependencyConditions *dependencies = new (cg->trHeapMemory()) TR::RegisterDependencyConditions(10, 10, cg->trMemory());
+   dependencies->addPreCondition(arrayReg, TR::RealRegister::NoReg);
+   dependencies->addPreCondition(charReg, TR::RealRegister::NoReg);
+   dependencies->addPreCondition(lengthReg, TR::RealRegister::NoReg);
+   dependencies->addPreCondition(dataAddrReg, TR::RealRegister::NoReg);
+   dependencies->addPreCondition(resultReg, TR::RealRegister::NoReg);
+   dependencies->addPreCondition(tmp1Reg, TR::RealRegister::NoReg);
+   dependencies->addPreCondition(tmp2Reg, TR::RealRegister::NoReg);
+   dependencies->addPreCondition(tmp3Reg, TR::RealRegister::NoReg);
+   dependencies->addPreCondition(vtmp1Reg, TR::RealRegister::NoReg);
+   dependencies->addPreCondition(vtmp2Reg, TR::RealRegister::NoReg);
+
+   dependencies->addPostCondition(arrayReg, TR::RealRegister::NoReg);
+   dependencies->addPostCondition(charReg, TR::RealRegister::NoReg);
+   dependencies->addPostCondition(lengthReg, TR::RealRegister::NoReg);
+   dependencies->addPostCondition(dataAddrReg, TR::RealRegister::NoReg);
+   dependencies->addPostCondition(resultReg, TR::RealRegister::NoReg);
+   dependencies->addPostCondition(tmp1Reg, TR::RealRegister::NoReg);
+   dependencies->addPostCondition(tmp2Reg, TR::RealRegister::NoReg);
+   dependencies->addPostCondition(tmp3Reg, TR::RealRegister::NoReg);
+   dependencies->addPostCondition(vtmp1Reg, TR::RealRegister::NoReg);
+   dependencies->addPostCondition(vtmp2Reg, TR::RealRegister::NoReg);
+
+   // Labels
+   TR::LabelSymbol *startLabel = generateLabelSymbol(cg);
+   TR::LabelSymbol *loopLabel = generateLabelSymbol(cg);
+   TR::LabelSymbol *matchedLabel = generateLabelSymbol(cg);
+   TR::LabelSymbol *notFoundLabel = generateLabelSymbol(cg);
    TR::LabelSymbol *doneLabel = generateLabelSymbol(cg);
 
+   startLabel->setStartInternalControlFlow();
+   doneLabel->setEndInternalControlFlow();
+
+   const int32_t vecWidth = 16;
+   const int32_t shift = isLatin1 ? 0 : 1;
+
+   // Addresses of array elements
 #ifdef J9VM_GC_SPARSE_HEAP_ALLOCATION
    if (TR::Compiler->om.isOffHeapAllocationEnabled())
       {
       generateTrg1MemInstruction(cg, TR::InstOpCode::ldrimmx, node, dataAddrReg, TR::MemoryReference::createWithDisplacement(cg, arrayReg, cg->comp()->fej9()->getOffsetOfContiguousDataAddrField()));
-      generateCompareImmInstruction(cg, node, dataAddrReg, 0, /* is64bit */ true);
-      generateConditionalBranchInstruction(cg, TR::InstOpCode::b_cond, node, doneLabel, TR::CC_EQ);
       }
    else
 #endif /* J9VM_GC_SPARSE_HEAP_ALLOCATION */
@@ -6428,169 +6410,101 @@ static TR::Register* inlineIntrinsicIndexOf(TR::Node* node, TR::CodeGenerator* c
       generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addimmx, node, dataAddrReg, arrayReg, TR::Compiler->om.contiguousArrayHeaderSizeInBytes());
       }
 
+   // Character to find
+   generateTrg1Src1Instruction(cg, isLatin1 ? TR::InstOpCode::vdup16b : TR::InstOpCode::vdup8h, node, vtmp2Reg, charReg);
+
    if (isLatin1)
       {
-      generateTrg1Src2Instruction(cg, TR::InstOpCode::addx, node, endReg, dataAddrReg, savedLengthReg);
+      generateTrg1Src2Instruction(cg, TR::InstOpCode::addx, node, tmp1Reg, dataAddrReg, offsetReg);
       }
    else
       {
-      generateTrg1Src2ShiftedInstruction(cg, TR::InstOpCode::addx, node, endReg, dataAddrReg, savedLengthReg, TR::SH_LSL, 1);
+      generateTrg1Src2ShiftedInstruction(cg, TR::InstOpCode::addx, node, tmp1Reg, dataAddrReg, offsetReg, TR::SH_LSL, 1);
       }
-   TR::Compilation *comp = cg->comp();
-   if (comp->getOptions()->enableDebugCounters())
-      {
-      cg->generateDebugCounter(TR::DebugCounter::debugCounterName(comp, "cg.StringIndexOf/(%s)/%s/%s",
-                                                                        comp->signature(),
-                                                                        (isLatin1 ? "compressed" : "decompressed"),
-                                                                        comp->getHotnessName()), *srm);
-      }
+   generateLogicalImmInstruction(cg, TR::InstOpCode::andimmx, node, tmp2Reg, tmp1Reg, true, 3); // N = true, immr:imms = 3 for immediate value 0xf
+   generateCompareBranchInstruction(cg, TR::InstOpCode::cbzx, node, tmp2Reg, loopLabel);
 
-   if (!isOffsetConstZero)
-      {
-      generateTrg1Src2Instruction(cg, TR::InstOpCode::subsx, node, lengthReg, savedLengthReg, offsetReg);
-      generateConditionalBranchInstruction(cg, TR::InstOpCode::b_cond, node, doneLabel, TR::CC_EQ);
-      }
-   else
-      {
-      generateMovInstruction(cg, node, lengthReg, savedLengthReg);
-      }
-   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addimmx, node, tmp0Reg, dataAddrReg, 16);
-   if (!isOffsetConstZero)
-      {
-      if (isLatin1)
-         {
-         generateTrg1Src2Instruction(cg, TR::InstOpCode::addx, node, dataAddrReg, dataAddrReg, offsetReg);
-         }
-      else
-         {
-         generateTrg1Src2ShiftedInstruction(cg, TR::InstOpCode::addx, node, dataAddrReg, dataAddrReg, offsetReg, TR::SH_LSL, 1);
-         }
-      }
-
-   TR::Register *vtmp0Reg = srm->findOrCreateScratchRegister(TR_VRF);
-
-   generateTrg1Src1Instruction(cg, isLatin1 ? TR::InstOpCode::vdup16b : TR::InstOpCode::vdup8h, node, vtmp0Reg, charReg);
-   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::subsimmx, node, lengthReg, lengthReg, isLatin1 ? 8 : 4);
-
-   TR::LabelSymbol *lessThan8Label = generateLabelSymbol(cg);
-   auto branchToLessThan8LabelInstr = generateConditionalBranchInstruction(cg, TR::InstOpCode::b_cond, node, lessThan8Label, TR::CC_LT);
-
-   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::subsimmx, node, lengthReg, lengthReg, isLatin1 ? 8 : 4);
-
-   TR::LabelSymbol *residualLabel = generateLabelSymbol(cg);
-   auto branchToResidualLabelInstr = generateConditionalBranchInstruction(cg, TR::InstOpCode::b_cond, node, residualLabel, TR::CC_LT);
-   if (comp->getOptions()->enableDebugCounters())
-      {
-      cg->generateDebugCounter(TR::DebugCounter::debugCounterName(comp, "cg.StringIndexOf/(%s)/%s/%s:long",
-                                                                        comp->signature(),
-                                                                        (isLatin1 ? "compressed" : "decompressed"),
-                                                                        comp->getHotnessName()), *srm);
-      }
-   /*
-    * Main loop: 16 bytes are processed in 1 iteration of the loop.
-    */
-   TR::LabelSymbol *loopLabel = generateLabelSymbol(cg);
-   auto loopLabelInstr = generateLabelInstruction(cg, TR::InstOpCode::label, node, loopLabel);
-   if (debugObj)
-      {
-      debugObj->addInstructionComment(branchToLessThan8LabelInstr, "Branch to lessThan8 if remaining length < (isLatin1 ? 8 : 4)");
-      debugObj->addInstructionComment(branchToResidualLabelInstr, "Branch to residualLabel if remaining length < (isLatin1 ? 16 : 8)");
-      debugObj->addInstructionComment(loopLabelInstr, "loopLabel");
-      }
-   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::subsimmx, node, lengthReg, lengthReg, isLatin1 ? 16 : 8);
-
-   TR::Register *vtmp1Reg = srm->findOrCreateScratchRegister(TR_VRF);
-
-   generateTrg1MemInstruction(cg, TR::InstOpCode::vldrpostq, node, vtmp1Reg, TR::MemoryReference::createWithDisplacement(cg, dataAddrReg, 16));
-   generateTrg1Src2Instruction(cg, (isLatin1 ? TR::InstOpCode::vcmeq16b : TR::InstOpCode::vcmeq8h), node, vtmp1Reg, vtmp0Reg, vtmp1Reg);
+   generateTrg1Src2Instruction(cg, TR::InstOpCode::subx, node, tmp1Reg, tmp1Reg, tmp2Reg); // tmp1Reg is 16-byte aligned
+   generateTrg1MemInstruction(cg, TR::InstOpCode::vldrimmq, node, vtmp1Reg, TR::MemoryReference::createWithDisplacement(cg, tmp1Reg, 0));
+   generateTrg1Src2Instruction(cg, isLatin1 ? TR::InstOpCode::vcmeq16b : TR::InstOpCode::vcmeq8h, node,
+                               vtmp1Reg, vtmp1Reg, vtmp2Reg);
    if (isLatin1)
       {
-      generateVectorShiftImmediateInstruction(cg, TR::InstOpCode::vshrn_8b, node, vtmp1Reg, vtmp1Reg, 4);
+      generateVectorShiftImmediateInstruction(cg, TR::InstOpCode::vshrn_8b, node, vtmp1Reg, vtmp1Reg, 4); // 8 bits x 16 -> 4 bits x 16
       }
    else
       {
-      generateTrg1Src1Instruction(cg, TR::InstOpCode::vxtn_8b, node, vtmp1Reg, vtmp1Reg);
-      }
-
-   generateMovVectorElementToGPRInstruction(cg, TR::InstOpCode::umovxd, node, tmp1Reg, vtmp1Reg, 0);
-   generateConditionalCompareImmInstruction(cg, node, tmp1Reg, 0, 0, TR::CC_CS, true);
-   auto branchBackToLoopLabelInstr = generateConditionalBranchInstruction(cg, TR::InstOpCode::b_cond, node, loopLabel, TR::CC_EQ);
-   TR::LabelSymbol *foundLabel = generateLabelSymbol(cg);
-   auto branchToFoundLabelInstr = generateCompareBranchInstruction(cg, TR::InstOpCode::cbnzx, node, tmp1Reg, foundLabel);
-   generateCompareImmInstruction(cg, node, lengthReg, (isLatin1 ? (-16) : (-8)), true);
-   auto branchToDoneLabelInstr = generateConditionalBranchInstruction(cg, TR::InstOpCode::b_cond, node, doneLabel, TR::CC_EQ);
-   auto residualLabelInstr = generateLabelInstruction(cg, TR::InstOpCode::label, node, residualLabel);
-   generateTrg1MemInstruction(cg, TR::InstOpCode::vldurq, node, vtmp1Reg, TR::MemoryReference::createWithDisplacement(cg, endReg, -16));
-   generateTrg1Src2Instruction(cg, (isLatin1 ? TR::InstOpCode::vcmeq16b : TR::InstOpCode::vcmeq8h), node, vtmp1Reg, vtmp0Reg, vtmp1Reg);
-   TR::LabelSymbol *mergeLabel = generateLabelSymbol(cg);
-   auto branchToMergeLabelInstr = generateLabelInstruction(cg, TR::InstOpCode::b, node, mergeLabel);
-   auto lessThan8LabelInstr = generateLabelInstruction(cg, TR::InstOpCode::label, node, lessThan8Label);
-   generateTrg1MemInstruction(cg, TR::InstOpCode::vldurd, node, vtmp1Reg, TR::MemoryReference::createWithDisplacement(cg, endReg, -8));
-   generateTrg1Src2Instruction(cg, (isLatin1 ? TR::InstOpCode::vcmeq8b : TR::InstOpCode::vcmeq4h), node, vtmp1Reg, vtmp0Reg, vtmp1Reg);
-   auto mergeLabelInstr = generateLabelInstruction(cg, TR::InstOpCode::label, node, mergeLabel);
-  if (debugObj)
-      {
-      debugObj->addInstructionComment(branchBackToLoopLabelInstr, "Jump back to loopLabel if the character is not found and the remaining data is >= 16 bytes");
-      debugObj->addInstructionComment(branchToFoundLabelInstr, "Branch to foundLabel if the character found");
-      debugObj->addInstructionComment(branchToDoneLabelInstr, "Branch to doneLabel if no data is left");
-      debugObj->addInstructionComment(residualLabelInstr, "residualLabel");
-      debugObj->addInstructionComment(lessThan8LabelInstr, "lessThan8Label");
-      debugObj->addInstructionComment(branchToMergeLabelInstr, "Branch to mergeLabel");
-      debugObj->addInstructionComment(mergeLabelInstr, "mergeLabel");
-      }
-   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addimmx, node, dataAddrReg, dataAddrReg, 16);
-
-   TR::Register *zeroReg = cg->allocateRegister();
-   generateTrg1Src2ShiftedInstruction(cg, TR::InstOpCode::subx, node, lengthReg, zeroReg, lengthReg, TR::SH_LSL, (isLatin1 ? 2 : 3));
-   if (isLatin1)
-      {
-      generateVectorShiftImmediateInstruction(cg, TR::InstOpCode::vshrn_8b, node, vtmp1Reg, vtmp1Reg, 4);
-      }
-   else
-      {
-      generateTrg1Src1Instruction(cg, TR::InstOpCode::vxtn_8b, node, vtmp1Reg, vtmp1Reg);
+      generateVectorShiftImmediateInstruction(cg, TR::InstOpCode::vshrn_4h, node, vtmp1Reg, vtmp1Reg, 8); // 16 bits x 8 -> 8 bits x 8
       }
    generateMovVectorElementToGPRInstruction(cg, TR::InstOpCode::umovxd, node, tmp1Reg, vtmp1Reg, 0);
-   generateTrg1Src2Instruction(cg, TR::InstOpCode::lsrvx, node, tmp1Reg, tmp1Reg, lengthReg);
-   generateCompareImmInstruction(cg, node, tmp1Reg, 0, true);
-   auto branchToDoneLabelInstr2 = generateConditionalBranchInstruction(cg, TR::InstOpCode::b_cond, node, doneLabel, TR::CC_EQ);
-   auto foundLabelInstr = generateLabelInstruction(cg, TR::InstOpCode::label, node, foundLabel);
-   generateTrg1Src1Instruction(cg, TR::InstOpCode::rbitx, node, tmp1Reg, tmp1Reg);
-   generateTrg1Src2Instruction(cg, TR::InstOpCode::subx, node, dataAddrReg, dataAddrReg, tmp0Reg);
-   generateTrg1Src1Instruction(cg, TR::InstOpCode::clzx, node, tmp1Reg, tmp1Reg);
+   generateLogicalShiftLeftImmInstruction(cg, node, tmp3Reg, tmp2Reg, 2, /* is64bit */ true);
+   generateTrg1Src2Instruction(cg, TR::InstOpCode::lsrvx, node, tmp1Reg, tmp1Reg, tmp3Reg);
+   generateCompareBranchInstruction(cg, TR::InstOpCode::cbnzx, node, tmp1Reg, matchedLabel);
 
-   generateTrg1Src2ShiftedInstruction(cg, TR::InstOpCode::addx, node, resultReg, dataAddrReg, tmp1Reg, TR::SH_LSR, 2);
+   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addimmx, node, resultReg, resultReg, vecWidth >> shift);
    if (!isLatin1)
       {
-      generateLogicalShiftRightImmInstruction(cg, node, resultReg, resultReg, 1);
+      generateLogicalShiftRightImmInstruction(cg, node, tmp2Reg, tmp2Reg, 1, /* is64bit */ true);
       }
+   generateTrg1Src2Instruction(cg, TR::InstOpCode::subx, node, resultReg, resultReg, tmp2Reg);
 
-   auto doneLabelInstr = generateLabelInstruction(cg, TR::InstOpCode::label, node, doneLabel);
-   if (debugObj)
+   generateCompareInstruction(cg, node, resultReg, lengthReg, /* is64bit */ false);
+   generateConditionalBranchInstruction(cg, TR::InstOpCode::b_cond, node, notFoundLabel, TR::CC_GE);
+
+   // (dataAddrReg + resultReg << shift) is 16-byte aligned here
+   generateLabelInstruction(cg, TR::InstOpCode::label, node, loopLabel);
+   if (isLatin1)
       {
-      debugObj->addInstructionComment(branchToDoneLabelInstr2, "Branch to doneLabel if the character is not found");
-      debugObj->addInstructionComment(foundLabelInstr, "foundLabel");
-      debugObj->addInstructionComment(doneLabelInstr, "doneLabel");
+      generateTrg1MemInstruction(cg, TR::InstOpCode::vldroffq, node, vtmp1Reg, TR::MemoryReference::createWithIndexReg(cg, dataAddrReg, resultReg));
       }
-   generateCondTrg1Src2Instruction(cg, TR::InstOpCode::csinvx, node, resultReg, resultReg, zeroReg, TR::CC_NE);
-
-   TR::RegisterDependencyConditions *conditions = new (cg->trHeapMemory()) TR::RegisterDependencyConditions(0, (isOffsetConstZero ? 5 : 6) + srm->numAvailableRegisters(), cg->trMemory());
-   conditions->addPostCondition(arrayReg, TR::RealRegister::NoReg);
-   conditions->addPostCondition(charReg, TR::RealRegister::NoReg);
-   conditions->addPostCondition(savedLengthReg, TR::RealRegister::NoReg);
-   if (!isOffsetConstZero)
+   else
       {
-      conditions->addPostCondition(offsetReg, TR::RealRegister::NoReg);
+      generateLogicalShiftLeftImmInstruction(cg, node, tmp1Reg, resultReg, 1, /* is64bit */ false);
+      generateTrg1MemInstruction(cg, TR::InstOpCode::vldroffq, node, vtmp1Reg, TR::MemoryReference::createWithIndexReg(cg, dataAddrReg, tmp1Reg));
       }
-   conditions->addPostCondition(zeroReg, TR::RealRegister::xzr);
-   conditions->addPostCondition(resultReg, TR::RealRegister::NoReg);
-   srm->addScratchRegistersToDependencyList(conditions);
+   generateTrg1Src2Instruction(cg, isLatin1 ? TR::InstOpCode::vcmeq16b : TR::InstOpCode::vcmeq8h, node,
+                               vtmp1Reg, vtmp1Reg, vtmp2Reg);
+   if (isLatin1)
+      {
+      generateVectorShiftImmediateInstruction(cg, TR::InstOpCode::vshrn_8b, node, vtmp1Reg, vtmp1Reg, 4); // 8 bits x 16 -> 4 bits x 16
+      }
+   else
+      {
+      generateVectorShiftImmediateInstruction(cg, TR::InstOpCode::vshrn_4h, node, vtmp1Reg, vtmp1Reg, 8); // 16 bits x 8 -> 8 bits x 8
+      }
+   generateMovVectorElementToGPRInstruction(cg, TR::InstOpCode::umovxd, node, tmp1Reg, vtmp1Reg, 0);
+   generateCompareBranchInstruction(cg, TR::InstOpCode::cbnzx, node, tmp1Reg, matchedLabel);
+   generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addimmx, node, resultReg, resultReg, vecWidth >> shift);
+   generateCompareInstruction(cg, node, resultReg, lengthReg, /* is64bit */ false);
+   generateConditionalBranchInstruction(cg, TR::InstOpCode::b_cond, node, loopLabel, TR::CC_LT);
+   generateLabelInstruction(cg, TR::InstOpCode::b, node, notFoundLabel);
 
-   generateLabelInstruction(cg, TR::InstOpCode::label, node, generateLabelSymbol(cg), conditions);
+   // Character matched in vector
+   generateLabelInstruction(cg, TR::InstOpCode::label, node, matchedLabel);
+   generateTrg1Src1Instruction(cg, TR::InstOpCode::rbitx, node, tmp1Reg, tmp1Reg);
+   generateTrg1Src1Instruction(cg, TR::InstOpCode::clzx, node, tmp1Reg, tmp1Reg);
+   generateLogicalShiftRightImmInstruction(cg, node, tmp1Reg, tmp1Reg, 2 + shift, /* is64bit */ true); // div by 4 (Latin1) or 8 (UTF16)
+   generateTrg1Src2Instruction(cg, TR::InstOpCode::addx, node, resultReg, resultReg, tmp1Reg);
+
+   generateCompareInstruction(cg, node, resultReg, lengthReg, /* is64bit */ false);
+   generateConditionalBranchInstruction(cg, TR::InstOpCode::b_cond, node, doneLabel, TR::CC_LT);
+
+   // Not found
+   generateLabelInstruction(cg, TR::InstOpCode::label, node, notFoundLabel);
+   loadConstant32(cg, node, -1, resultReg);
+   // fall through to doneLabel
+
+   generateLabelInstruction(cg, TR::InstOpCode::label, node, doneLabel, dependencies);
+
+   cg->stopUsingRegister(dataAddrReg);
+   cg->stopUsingRegister(tmp1Reg);
+   cg->stopUsingRegister(tmp2Reg);
+   cg->stopUsingRegister(tmp3Reg);
+   cg->stopUsingRegister(vtmp1Reg);
+   cg->stopUsingRegister(vtmp2Reg);
 
    node->setRegister(resultReg);
-   cg->stopUsingRegister(zeroReg);
-   srm->stopUsingRegisters();
+
    if (!isStaticCall)
       {
       cg->recursivelyDecReferenceCount(node->getFirstChild());
