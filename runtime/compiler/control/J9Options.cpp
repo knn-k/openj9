@@ -3274,14 +3274,14 @@ bool J9::Options::feLatePostProcess(void * base, TR::OptionSet * optionSet)
    if ((*vmHooks)->J9HookDisable(vmHooks, J9HOOK_VM_METHOD_ENTER))
       {
       self()->setOption(TR_ReportMethodEnter);
-#if !defined(TR_HOST_S390) && !defined(TR_HOST_POWER) && !defined(TR_HOST_X86)
+#if !defined(TR_HOST_S390) && !defined(TR_HOST_POWER) && !defined(TR_HOST_X86) && !defined(TR_HOST_ARM64)
       doAOT = false;
 #endif
       }
    if ((*vmHooks)->J9HookDisable(vmHooks, J9HOOK_VM_METHOD_RETURN))
       {
       self()->setOption(TR_ReportMethodExit);
-#if !defined(TR_HOST_S390) && !defined(TR_HOST_POWER) && !defined(TR_HOST_X86)
+#if !defined(TR_HOST_S390) && !defined(TR_HOST_POWER) && !defined(TR_HOST_X86) && !defined(TR_HOST_ARM64)
       doAOT = false;
 #endif
       }
