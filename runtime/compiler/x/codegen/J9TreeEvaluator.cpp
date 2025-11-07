@@ -1359,9 +1359,13 @@ TR::Register *J9::X86::TreeEvaluator::monexitEvaluator(TR::Node *node, TR::CodeG
 
 TR::Register *J9::X86::TreeEvaluator::asynccheckEvaluator(TR::Node *node, TR::CodeGenerator *cg)
    {
+   static const bool disableAsyncCheck = feGetEnv("TR_disableAsyncCheck") != NULL;
+
    // Generate the test and branch for async message processing.
    //
    TR::Node *compareNode = node->getFirstChild();
+
+   if (!disableAsyncCheck) {
    TR::Node *secondChild = compareNode->getSecondChild();
    TR::LabelSymbol *snippetLabel = generateLabelSymbol(cg);
    TR::Compilation *comp = cg->comp();
@@ -1415,6 +1419,7 @@ TR::Register *J9::X86::TreeEvaluator::asynccheckEvaluator(TR::Node *node, TR::Co
 
    endControlFlowLabel->setEndInternalControlFlow();
    generateLabelInstruction(TR::InstOpCode::label, node, endControlFlowLabel, cg);
+   }
 
    cg->decReferenceCount(compareNode);
 

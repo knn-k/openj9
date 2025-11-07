@@ -1755,14 +1755,16 @@ J9::ARM64::TreeEvaluator::monexitEvaluator(TR::Node *node, TR::CodeGenerator *cg
 TR::Register *
 J9::ARM64::TreeEvaluator::asynccheckEvaluator(TR::Node *node, TR::CodeGenerator *cg)
    {
+   static const bool disableAsyncCheck = feGetEnv("TR_disableAsyncCheck") != NULL;
+
    // The child contains an inline test. If it succeeds, the helper is called.
    // The address of the helper is contained as a long in this node.
    //
    TR::Node *testNode = node->getFirstChild();
    TR::Node *firstChild = testNode->getFirstChild();
-   TR::Register *src1Reg = cg->evaluate(firstChild);
    TR::Node *secondChild = testNode->getSecondChild();
-
+   if (!disableAsyncCheck) {
+   TR::Register *src1Reg = cg->evaluate(firstChild);
    TR_ASSERT(testNode->getOpCodeValue() == TR::lcmpeq && secondChild->getLongInt() == -1L, "asynccheck bad format");
 
    TR::LabelSymbol *snippetLabel = generateLabelSymbol(cg);
@@ -1780,7 +1782,7 @@ J9::ARM64::TreeEvaluator::asynccheckEvaluator(TR::Node *node, TR::CodeGenerator 
 
    // ARM64HelperCallSnippet generates "bl" instruction
    cg->machine()->setLinkRegisterKilled(true);
-
+   }
    cg->decReferenceCount(firstChild);
    cg->decReferenceCount(secondChild);
    cg->decReferenceCount(testNode);
