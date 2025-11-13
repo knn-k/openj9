@@ -345,6 +345,9 @@ static const OptimizationStrategy warmStrategyOpts[] =
 #endif
    { OMR::localCSE,                                  OMR::IfLoopsAndNotProfiling     },
    { OMR::idiomRecognition,                          OMR::IfLoopsAndNotProfiling     },
+   { OMR::loopSpecializerGroup,                      OMR::IfLoopsAndNotProfiling     },
+   { OMR::inductionVariableAnalysis,                 OMR::IfLoopsAndNotProfiling     },
+   { OMR::generalLoopUnroller,                       OMR::IfLoopsAndNotProfiling     }, // unroll Loops
    { OMR::treeSimplification                                                    },
    { OMR::redundantGotoElimination,                  OMR::IfEnabledAndNotJitProfiling     },
    { OMR::blockSplitter                                                         },
