@@ -359,6 +359,7 @@ static const OptimizationStrategy warmStrategyOpts[] =
    { OMR::arraycopyTransformation                                               },
    { OMR::treeSimplification,                        OMR::IfEnabled                  },
    { OMR::asyncCheckInsertion,                       OMR::IfNotJitProfiling          },
+   { OMR::redundantAsyncCheckRemoval,                OMR::IfNotJitProfiling          }, // optimize async check placement
    { OMR::localCSE                                                              },
    { OMR::treeSimplification,                        OMR::MarkLastRun                },
    { OMR::andSimplification,                         OMR::IfEnabled                  },  //clean up after versioner
