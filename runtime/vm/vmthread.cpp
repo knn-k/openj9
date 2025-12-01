@@ -739,11 +739,11 @@ threadParseArguments(J9JavaVM *vm, char *optArg)
 
 
 #if defined(OMR_THR_YIELD_ALG)
-#if defined(J9VM_ARCH_X86) || defined(J9VM_ARCH_POWER) || defined(J9VM_ARCH_S390)
+#if defined(J9VM_ARCH_X86) || defined(J9VM_ARCH_POWER) || defined(J9VM_ARCH_S390) || defined(J9VM_ARCH_AARCH64)
 	**(UDATA **)omrthread_global((char *)"parkPolicy") = OMRTHREAD_PARK_POLICY_SLEEP;
-#else /* defined(J9VM_ARCH_X86) || defined(J9VM_ARCH_POWER) || defined(J9VM_ARCH_S390) */
+#else /* defined(J9VM_ARCH_X86) || defined(J9VM_ARCH_POWER) || defined(J9VM_ARCH_S390 || defined(J9VM_ARCH_AARCH64)) */
 	**(UDATA **)omrthread_global((char *)"parkPolicy") = OMRTHREAD_PARK_POLICY_NONE;
-#endif /* defined(J9VM_ARCH_X86) || defined(J9VM_ARCH_POWER) || defined(J9VM_ARCH_S390) */
+#endif /* defined(J9VM_ARCH_X86) || defined(J9VM_ARCH_POWER) || defined(J9VM_ARCH_S390 || defined(J9VM_ARCH_AARCH64)) */
 	**(UDATA **)omrthread_global((char *)"parkSleepMultiplier") = 0;
 	**(UDATA **)omrthread_global((char *)"parkSpinCount") = 0;
 	**(UDATA **)omrthread_global((char *)"parkSleepCount") = 2;
@@ -757,7 +757,10 @@ threadParseArguments(J9JavaVM *vm, char *optArg)
 #elif defined(J9VM_ARCH_S390) /* defined(OMR_ARCH_X86) */
 	**(UDATA **)omrthread_global((char *)"parkSleepCpuUtilThreshold") = 99;
 	**(UDATA **)omrthread_global((char *)"parkSleepTime") = 100;
-#else /* defined(J9VM_ARCH_S390) */
+#elif defined(J9VM_ARCH_AARCH64)
+	**(UDATA **)omrthread_global((char *)"parkSleepCpuUtilThreshold") = 99;
+	**(UDATA **)omrthread_global((char *)"parkSleepTime") = 400;
+#else /* defined(J9VM_ARCH_AARCH64) */
 	**(UDATA **)omrthread_global((char *)"parkSleepCpuUtilThreshold") = 100;
 	**(UDATA **)omrthread_global((char *)"parkSleepTime") = 0;
 #endif /* defined(J9VM_ARCH_POWER) */
