@@ -3687,6 +3687,8 @@ generateMultianewArrayWithInlineAllocators(TR::Node *node, TR::CodeGenerator *cg
    TR_Debug *compDebug = comp->getDebug();
    TR_J9VMBase *fej9 = comp->fej9();
 
+   fprintf(stderr, "* Inline multianewarray: %s @%s\n", cg->comp()->signature(), cg->comp()->getHotnessName());
+
    // alignment requirement
    int32_t alignmentInBytes = TR::Compiler->om.getObjectAlignmentInBytes();
 
@@ -4155,6 +4157,8 @@ J9::ARM64::TreeEvaluator::multianewArrayEvaluator(TR::Node *node, TR::CodeGenera
    else
       {
       logprintf(comp->getOption(TR_TraceCG), comp->log(), "Disabling inline allocations for multianewarray of dim %d\n", nDims);
+      fprintf(stderr, "* Not inlining multianewarray: dim=%d tlh=%d\n", nDims, fej9->tlhHasBeenCleared());
+
       TR::ILOpCodes opCode = node->getOpCodeValue();
       TR::Node::recreate(node, TR::acall);
       TR::Register *targetRegister = directCallEvaluator(node, cg);
