@@ -3824,8 +3824,16 @@ generateMultianewArrayWithInlineAllocators(TR::Node *node, TR::CodeGenerator *cg
             + ((needsAlignHeader || needsAlignRefField) ? alignmentCompensation : 0));
    if (needsAlignHeader || needsAlignRefField) // do a mask to ensure alignment
       {
-      loadConstant64(cg, node, alignmentCompensation, temp4Reg);
-      generateTrg1Src2Instruction(cg, TR::InstOpCode::bicx, node, temp1Reg, temp1Reg, temp4Reg);
+      if (alignmentInBytes == 8)
+         {
+         // N = true, imms:immr = 0xf7c for masking by ~7
+         generateLogicalImmInstruction(cg, TR::InstOpCode::andimmx, node, temp1Reg, temp1Reg, true, 0xf7c);
+         }
+         else
+         {
+         loadConstant64(cg, node, alignmentCompensation, temp4Reg);
+         generateTrg1Src2Instruction(cg, TR::InstOpCode::bicx, node, temp1Reg, temp1Reg, temp4Reg);
+         }
       }
 
    // jump away if the second dimension is not zero
@@ -3951,8 +3959,16 @@ generateMultianewArrayWithInlineAllocators(TR::Node *node, TR::CodeGenerator *cg
       }
    if (needsAlignHeader || needsAlignLeaf) // do a mask to ensure alignment
       {
-      loadConstant64(cg, node, alignmentCompensation, temp4Reg);
-      generateTrg1Src2Instruction(cg, TR::InstOpCode::bicx, node, subArraySizeReg, subArraySizeReg, temp4Reg);
+      if (alignmentInBytes == 8)
+         {
+         // N = true, imms:immr = 0xf7c for masking by ~7
+         generateLogicalImmInstruction(cg, TR::InstOpCode::andimmx, node, temp1Reg, temp1Reg, true, 0xf7c);
+         }
+         else
+         {
+         loadConstant64(cg, node, alignmentCompensation, temp4Reg);
+         generateTrg1Src2Instruction(cg, TR::InstOpCode::bicx, node, subArraySizeReg, subArraySizeReg, temp4Reg);
+         }
       }
    // temp2Reg = subArraySizeReg * firstDimLenReg = the space required for all subarrays
    generateMulInstruction(cg, node, temp2Reg, subArraySizeReg, firstDimLenReg, /* is64bit */ true);
@@ -4102,11 +4118,6 @@ generateMultianewArrayWithInlineAllocators(TR::Node *node, TR::CodeGenerator *cg
 
    // Copy the newly allocated object into a collected reference register
    TR::Register *targetRegisterFinal = cg->allocateCollectedReferenceRegister();
-#if 0 // @@ not used?
-   TR::RegisterDependencyConditions *finalDependency =
-      new (cg->trHeapMemory()) TR::RegisterDependencyConditions(0, 1, cg->trMemory());
-   finalDependency->addPostCondition(targetRegisterFinal, TR::RealRegister::NoReg);
-#endif
    generateMovInstruction(cg, node, targetRegisterFinal, targetReg, /* is64bit*/ true);
 
    cg->stopUsingRegister(targetReg);
