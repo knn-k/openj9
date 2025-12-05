@@ -2435,6 +2435,7 @@ TR::Register *J9::Power::TreeEvaluator::multianewArrayEvaluator(TR::Node *node, 
          && fej9->tlhHasBeenCleared() && !comp->getOptions()->realTimeGC()
          && leafArrayElementSize != -1)
       {
+      fprintf(stderr, "* inline multianewarray %s @%s\n", comp->signature(), comp->getHotnessName());
       return generateMultianewArrayWithInlineAllocators(node, cg, leafArrayElementSize);
       }
    else
