@@ -3697,10 +3697,10 @@ generateMultianewArrayWithInlineAllocators(TR::Node *node, TR::CodeGenerator *cg
    TR_ASSERT_FATAL(referenceFieldSize <= 8,
       "multianewArrayEvaluator - referenceFieldSize cannot be greater than 8!");
    int32_t addrSize = TR::Compiler->om.sizeofReferenceAddress();
+   TR::InstOpCode::Mnemonic loadAddrOp = addrSize == 8 ? TR::InstOpCode::ldrimmx : TR::InstOpCode::ldrimmw;
+   TR::InstOpCode::Mnemonic storeAddrOp = addrSize == 8 ? TR::InstOpCode::strimmx : TR::InstOpCode::strimmw;
    // we use 64 bit classes only in 64 bit arch without compression
    bool use64BitClasses = TR::Compiler->om.generateCompressedObjectHeaders();
-   TR::InstOpCode::Mnemonic loadAddrOp = use64BitClasses ? TR::InstOpCode::ldrimmx : TR::InstOpCode::ldrimmw;
-   TR::InstOpCode::Mnemonic storeAddrOp = use64BitClasses ? TR::InstOpCode::strimmx : TR::InstOpCode::strimmw;
    TR::InstOpCode::Mnemonic storeClassOp = use64BitClasses ? TR::InstOpCode::strimmx : TR::InstOpCode::strimmw;
    int8_t classPtrLen = use64BitClasses ? 8 : 4;
 
@@ -3918,7 +3918,7 @@ generateMultianewArrayWithInlineAllocators(TR::Node *node, TR::CodeGenerator *cg
       }
    else
       {
-      generateMemSrc1Instruction(cg, TR::InstOpCode::strimmx, node,
+      generateMemSrc1Instruction(cg, storeAddrOp, node,
          TR::MemoryReference::createWithDisplacement(cg, temp1Reg, 0), temp2Reg);
       }
 
@@ -4009,8 +4009,7 @@ generateMultianewArrayWithInlineAllocators(TR::Node *node, TR::CodeGenerator *cg
       // the dataAddr field of the 1st dimension array, which is non-zero and hence contiguous,
       // should point to the first element of the array i.e. temp1Reg
       generateMemSrc1Instruction(cg, storeAddrOp, node,
-         TR::MemoryReference::createWithDisplacement(cg, targetReg,
-            fej9->getOffsetOfContiguousDataAddrField()), temp1Reg);
+         TR::MemoryReference::createWithDisplacement(cg, targetReg, fej9->getOffsetOfContiguousDataAddrField()), temp1Reg);
       }
 #endif /* J9VM_GC_SPARSE_HEAP_ALLOCATION */
 
@@ -4021,8 +4020,7 @@ generateMultianewArrayWithInlineAllocators(TR::Node *node, TR::CodeGenerator *cg
    generateLabelInstruction(cg, TR::InstOpCode::label, node, loop2Label);
    // initialise a header in the second dimension with class = component
    generateMemSrc1Instruction(cg, storeClassOp, node,
-      TR::MemoryReference::createWithDisplacement(cg, temp2Reg,
-         TR::Compiler->om.offsetOfObjectVftField()), componentClassReg);
+      TR::MemoryReference::createWithDisplacement(cg, temp2Reg, TR::Compiler->om.offsetOfObjectVftField()), componentClassReg);
    // mustBeZero is already zero by default
    // all the elements in the subarray are also null by default, hooray for no initialisation needed
    generateMemSrc1Instruction(cg, TR::InstOpCode::strimmw, node,
@@ -4059,7 +4057,8 @@ generateMultianewArrayWithInlineAllocators(TR::Node *node, TR::CodeGenerator *cg
       }
    else
       {
-      generateMemSrc1Instruction(cg, TR::InstOpCode::strimmx, node, TR::MemoryReference::createWithDisplacement(cg, temp1Reg, 0), temp2Reg);
+      generateMemSrc1Instruction(cg, storeAddrOp, node,
+         TR::MemoryReference::createWithDisplacement(cg, temp1Reg, 0), temp2Reg);
       }
    // index cursors temp1 and temp2
    generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addimmx, node, temp1Reg, temp1Reg, referenceFieldSize);
