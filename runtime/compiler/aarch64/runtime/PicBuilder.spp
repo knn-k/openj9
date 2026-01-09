@@ -1099,7 +1099,7 @@ FUNC_LABEL(_interfaceSlotsUnavailable):
 	mov	x8, x30						// preserve LR
 	ldr	x10, [x30, #J9TR_ICSnippet_codeCacheReturnAddress]	// protect code cache RA in x10 (in L_commonJitDispatch, it is expected)
 
-#define NO_ITABLEWALK_CHECK
+//#define NO_ITABLEWALK_CHECK
 #ifndef NO_HELPER_LASTITABLE_CHECK
 	// b L_callHelper // until code is complete
 
@@ -1141,6 +1141,7 @@ FUNC_LABEL(_interfaceSlotsUnavailable):
 	bne	L_callHelper
 	// lastITable is a match
 L_hitITable:
+    b	L_callHelper // for debug
 	ldr	x11, [x8, #J9TR_ICSnippet_ITableIndex]		// Load the itable offset from the snippet
 	tst	x11, #J9TR_J9_ITABLE_OFFSET_TAG_BITS		// Call the helper if the itable offset is tagged
 	bne	L_callHelper
