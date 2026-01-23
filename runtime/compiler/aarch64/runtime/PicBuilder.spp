@@ -1105,17 +1105,17 @@ FUNC_LABEL(_interfaceSlotsUnavailable):
 
 	// Before iTable walk or going to the VM helper, check if the receiver class lastITable matches the interface
 	// class of the method being called and if so, use it to quickly look up the vtable offset and make the call
-	LOAD_CLASS(x9, w9, x0)										// Load the class
-	and	x9, x9, #~(J9TR_RequiredClassAlignment-1)	// mask VFT bits
+	LOAD_CLASS(x14, w14, x0)										// Load the class
+	and	x14, x14, #~(J9TR_RequiredClassAlignment-1)	// mask VFT bits
 	ldr	x11, [x8, #J9TR_ICSnippet_InterfaceClass]	// Load the interface class of the method from the snippet
-	ldr	x12, [x9, #J9TR_J9Class_lastITable]		// Load the cached last ITable
+	ldr	x12, [x14, #J9TR_J9Class_lastITable]		// Load the cached last ITable
 	ldr	x13, [x12, #J9TR_J9ITable_interfaceClass]	// Load the interface class whose ITable this is
 	cmp	x11, x13
 #ifndef NO_ITABLEWALK_CHECK
 	beq	L_hitITable
 	// Before going to the VM helper do iTable walk N times
 	// check iTable[0]
-	ldr	x12, [x9, #J9TR_J9Class_iTable]			// Load the iTable pointer
+	ldr	x12, [x14, #J9TR_J9Class_iTable]			// Load the iTable pointer
 	cbz	x12, L_callHelper				// check iTable != null
 	ldr	x13, [x12, #J9TR_J9ITable_interfaceClass]	// Load iTable class
 	cmp	x11, x13
@@ -1147,7 +1147,7 @@ L_hitITable:
 	ldr	x11, [x12, x11]					// Load the interpreter vft offset
 	neg	x11, x11
 	add	x11, x11, #J9TR_InterpVTableOffset		// Convert to a JIT vft offset
-	ldr	x12, [x9, x11]					// Load the method
+	ldr	x12, [x14, x11]					// Load the method
 	br	x12						// Call the method (control does not return here)
 
 L_callHelper:
