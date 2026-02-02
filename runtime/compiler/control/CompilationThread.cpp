@@ -9148,6 +9148,7 @@ TR::CompilationInfoPerThreadBase::wrappedCompile(J9PortLibrary *portLib, void * 
                      {
                      options->setOption(TR_NotCompileTimeSensitive);
                      }
+#if 0
                   else
                      {
                      if (TR::Compiler->target.cpu.isX86())
@@ -9157,6 +9158,7 @@ TR::CompilationInfoPerThreadBase::wrappedCompile(J9PortLibrary *portLib, void * 
                            options->setDisabled(OMR::idiomRecognition, true);
                         }
                      }
+#endif
                   }
                } // end of compilation strategy tweaks for Java
 

@@ -343,8 +343,23 @@ static const OptimizationStrategy warmStrategyOpts[] =
    { OMR::loopReduction                                                              },
    { OMR::blockShuffling                                                             },
 #endif
+#if 1
+   { partialRedundancyEliminationGroup },
+#else
    { OMR::localCSE,                                  OMR::IfLoopsAndNotProfiling     },
+#if 1
+    { OMR::loopVersionerGroup, OMR::IfEnabledAndLoops },
+    { OMR::treeSimplification, OMR::IfEnabled }, // loop reduction block should be after PRE so that privatization
+    { OMR::treesCleansing }, // clean up gotos in code and convert to fall-throughs for loop reducer
+    { OMR::redundantGotoElimination, OMR::IfNotJitProfiling }, // clean up for loop reducer.  Note: NEVER run this before PRE
+    { OMR::loopReduction, OMR::IfLoops }, // will have happened and it needs to be before loopStrider
+    { OMR::localCSE, OMR::IfEnabled }, // so that it will not get confused with internal pointers.
+    { OMR::globalDeadStoreElimination, OMR::IfEnabledAndMoreThanOneBlock }, // It may need to be run twice if deadstore elimination is required,
+    { OMR::deadTreesElimination }, // but this only happens for unsafe access (arraytranslate.twoToOne)
+    { OMR::loopReduction }, // and so is conditional
+#endif
    { OMR::idiomRecognition,                          OMR::IfLoopsAndNotProfiling     },
+#endif
    { OMR::treeSimplification                                                    },
    { OMR::redundantGotoElimination,                  OMR::IfEnabledAndNotJitProfiling     },
    { OMR::blockSplitter                                                         },
