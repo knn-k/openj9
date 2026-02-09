@@ -344,7 +344,7 @@ static const OptimizationStrategy warmStrategyOpts[] =
    { OMR::blockShuffling                                                             },
 #endif
 #if 1
-   { partialRedundancyEliminationGroup },
+   { OMR::partialRedundancyEliminationGroup },
 #else
    { OMR::localCSE,                                  OMR::IfLoopsAndNotProfiling     },
 #if 1
