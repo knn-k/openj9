@@ -344,20 +344,42 @@ static const OptimizationStrategy warmStrategyOpts[] =
    { OMR::blockShuffling                                                             },
 #endif
 #if 1
-   { OMR::partialRedundancyEliminationGroup },
+   // from hotStrategyOpts (try omitting one or more?)
+   { OMR::loopCanonicalizationGroup,             OMR::IfLoops                  },
+   { OMR::inductionVariableAnalysis,             OMR::IfLoops                  },
+   { OMR::redundantInductionVarElimination,      OMR::IfLoops                  },
+   { OMR::loopAliasRefinerGroup,                 OMR::IfLoops                  },
+   // from partialRedundancyEliminationGroup
+   { OMR::globalValuePropagation, OMR::IfMoreThanOneBlock }, // GVP (before PRE)
+   { OMR::deadTreesElimination },
+   { OMR::treeSimplification, OMR::IfEnabled },
+   { treeSimplification }, // might fold expressions created by versioning/induction variables
+   { treeSimplification, OMR::IfEnabled }, // Array length simplification shd be followed by reassoc before PRE
+   { OMR::reorderArrayExprGroup, OMR::IfEnabled }, // maximize opportunities hoisting of index array expressions
+   { OMR::partialRedundancyElimination, OMR::IfMoreThanOneBlock },
+   { OMR::localCSE, }, // common up expression which can benefit EA
+   { OMR::catchBlockRemoval, OMR::IfEnabled }, // if checks were removed
+   { OMR::deadTreesElimination, OMR::IfEnabled }, // if checks were removed
+   { OMR::compactNullChecks, OMR::IfEnabled }, // PRE creates explicit null checks in large numbers
+   { OMR::localReordering, OMR::IfEnabled }, // PRE may create temp stores that can be moved closer to uses
+   { OMR::globalValuePropagation, OMR::IfEnabledAndMoreThanOneBlockMarkLastRun }, // GVP (after PRE)
+   { OMR::preEscapeAnalysis, OMR::IfOSR },
+   { OMR::escapeAnalysis, OMR::IfEAOpportunitiesMarkLastRun }, // to stack-allocate after loopversioner and localCSE
+   { OMR::postEscapeAnalysis, OMR::IfOSR },
+   { OMR::basicBlockOrdering, OMR::IfLoops }, // early ordering with no extension
+   { OMR::globalCopyPropagation, OMR::IfLoops }, // for Loop Versioner
+   { OMR::loopVersionerGroup, OMR::IfEnabledAndLoops },
+   { OMR::treeSimplification, OMR::IfEnabled }, // loop reduction block should be after PRE so that privatization
+   { OMR::treesCleansing }, // clean up gotos in code and convert to fall-throughs for loop reducer
+   { OMR::redundantGotoElimination, OMR::IfNotJitProfiling }, // clean up for loop reducer.  Note: NEVER run this before PRE
+   // { OMR::loopReduction, OMR::IfLoops }, // will have happened and it needs to be before loopStrider
+   { OMR::localCSE, OMR::IfEnabled }, // so that it will not get confused with internal pointers.
+   { OMR::globalDeadStoreElimination, OMR::IfEnabledAndMoreThanOneBlock }, // It may need to be run twice if deadstore elimination is required,
+   { OMR::deadTreesElimination }, // but this only happens for unsafe access (arraytranslate.twoToOne)
+   // { OMR::loopReduction }, // and so is conditional
+   { OMR::idiomRecognition,                          OMR::IfLoopsAndNotProfiling     },
 #else
    { OMR::localCSE,                                  OMR::IfLoopsAndNotProfiling     },
-#if 1
-    { OMR::loopVersionerGroup, OMR::IfEnabledAndLoops },
-    { OMR::treeSimplification, OMR::IfEnabled }, // loop reduction block should be after PRE so that privatization
-    { OMR::treesCleansing }, // clean up gotos in code and convert to fall-throughs for loop reducer
-    { OMR::redundantGotoElimination, OMR::IfNotJitProfiling }, // clean up for loop reducer.  Note: NEVER run this before PRE
-    { OMR::loopReduction, OMR::IfLoops }, // will have happened and it needs to be before loopStrider
-    { OMR::localCSE, OMR::IfEnabled }, // so that it will not get confused with internal pointers.
-    { OMR::globalDeadStoreElimination, OMR::IfEnabledAndMoreThanOneBlock }, // It may need to be run twice if deadstore elimination is required,
-    { OMR::deadTreesElimination }, // but this only happens for unsafe access (arraytranslate.twoToOne)
-    { OMR::loopReduction }, // and so is conditional
-#endif
    { OMR::idiomRecognition,                          OMR::IfLoopsAndNotProfiling     },
 #endif
    { OMR::treeSimplification                                                    },
