@@ -353,8 +353,8 @@ static const OptimizationStrategy warmStrategyOpts[] =
    { OMR::globalValuePropagation, OMR::IfMoreThanOneBlock }, // GVP (before PRE)
    { OMR::deadTreesElimination },
    { OMR::treeSimplification, OMR::IfEnabled },
-   { treeSimplification }, // might fold expressions created by versioning/induction variables
-   { treeSimplification, OMR::IfEnabled }, // Array length simplification shd be followed by reassoc before PRE
+   { OMR::treeSimplification }, // might fold expressions created by versioning/induction variables
+   { OMR::treeSimplification, OMR::IfEnabled }, // Array length simplification shd be followed by reassoc before PRE
    { OMR::reorderArrayExprGroup, OMR::IfEnabled }, // maximize opportunities hoisting of index array expressions
    { OMR::partialRedundancyElimination, OMR::IfMoreThanOneBlock },
    { OMR::localCSE, }, // common up expression which can benefit EA
