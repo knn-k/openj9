@@ -345,30 +345,30 @@ static const OptimizationStrategy warmStrategyOpts[] =
 #endif
 #if 1
    // from hotStrategyOpts (try omitting one or more?)
-   { OMR::loopCanonicalizationGroup,             OMR::IfLoops                  },
-   { OMR::inductionVariableAnalysis,             OMR::IfLoops                  },
-   { OMR::redundantInductionVarElimination,      OMR::IfLoops                  },
-   { OMR::loopAliasRefinerGroup,                 OMR::IfLoops                  },
+   { OMR::loopCanonicalizationGroup,             OMR::IfLoops                  }, // required
+   // { OMR::inductionVariableAnalysis,             OMR::IfLoops                  },
+   { OMR::redundantInductionVarElimination,      OMR::IfLoops                  }, // required
+   // { OMR::loopAliasRefinerGroup,                 OMR::IfLoops                  },
    // from partialRedundancyEliminationGroup
-   { OMR::globalValuePropagation, OMR::IfMoreThanOneBlock }, // GVP (before PRE)
-   { OMR::deadTreesElimination },
-   { OMR::treeSimplification, OMR::IfEnabled },
-   { OMR::treeSimplification }, // might fold expressions created by versioning/induction variables
+   // { OMR::globalValuePropagation, OMR::IfMoreThanOneBlock }, // GVP (before PRE)
+   // { OMR::deadTreesElimination },
+   // { OMR::treeSimplification, OMR::IfEnabled },
+   // { OMR::treeSimplification }, // might fold expressions created by versioning/induction variables
    { OMR::treeSimplification, OMR::IfEnabled }, // Array length simplification shd be followed by reassoc before PRE
    { OMR::reorderArrayExprGroup, OMR::IfEnabled }, // maximize opportunities hoisting of index array expressions
-   { OMR::partialRedundancyElimination, OMR::IfMoreThanOneBlock },
-   { OMR::localCSE, }, // common up expression which can benefit EA
-   { OMR::catchBlockRemoval, OMR::IfEnabled }, // if checks were removed
-   { OMR::deadTreesElimination, OMR::IfEnabled }, // if checks were removed
-   { OMR::compactNullChecks, OMR::IfEnabled }, // PRE creates explicit null checks in large numbers
-   { OMR::localReordering, OMR::IfEnabled }, // PRE may create temp stores that can be moved closer to uses
-   { OMR::globalValuePropagation, OMR::IfEnabledAndMoreThanOneBlockMarkLastRun }, // GVP (after PRE)
-   { OMR::preEscapeAnalysis, OMR::IfOSR },
-   { OMR::escapeAnalysis, OMR::IfEAOpportunitiesMarkLastRun }, // to stack-allocate after loopversioner and localCSE
-   { OMR::postEscapeAnalysis, OMR::IfOSR },
+   // { OMR::partialRedundancyElimination, OMR::IfMoreThanOneBlock },
+   // { OMR::localCSE, }, // common up expression which can benefit EA
+   // { OMR::catchBlockRemoval, OMR::IfEnabled }, // if checks were removed
+   // { OMR::deadTreesElimination, OMR::IfEnabled }, // if checks were removed
+   // { OMR::compactNullChecks, OMR::IfEnabled }, // PRE creates explicit null checks in large numbers
+   // { OMR::localReordering, OMR::IfEnabled }, // PRE may create temp stores that can be moved closer to uses
+   // { OMR::globalValuePropagation, OMR::IfEnabledAndMoreThanOneBlockMarkLastRun }, // GVP (after PRE)
+   // { OMR::preEscapeAnalysis, OMR::IfOSR },
+   // { OMR::escapeAnalysis, OMR::IfEAOpportunitiesMarkLastRun }, // to stack-allocate after loopversioner and localCSE
+   // { OMR::postEscapeAnalysis, OMR::IfOSR },
    { OMR::basicBlockOrdering, OMR::IfLoops }, // early ordering with no extension
-   { OMR::globalCopyPropagation, OMR::IfLoops }, // for Loop Versioner
-   { OMR::loopVersionerGroup, OMR::IfEnabledAndLoops },
+   // { OMR::globalCopyPropagation, OMR::IfLoops }, // for Loop Versioner
+   // { OMR::loopVersionerGroup, OMR::IfEnabledAndLoops },
    { OMR::treeSimplification, OMR::IfEnabled }, // loop reduction block should be after PRE so that privatization
    { OMR::treesCleansing }, // clean up gotos in code and convert to fall-throughs for loop reducer
    { OMR::redundantGotoElimination, OMR::IfNotJitProfiling }, // clean up for loop reducer.  Note: NEVER run this before PRE
