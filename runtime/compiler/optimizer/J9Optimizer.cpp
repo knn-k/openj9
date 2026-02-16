@@ -354,8 +354,8 @@ static const OptimizationStrategy warmStrategyOpts[] =
    // { OMR::deadTreesElimination },
    // { OMR::treeSimplification, OMR::IfEnabled },
    // { OMR::treeSimplification }, // might fold expressions created by versioning/induction variables
-   { OMR::treeSimplification, OMR::IfEnabled }, // Array length simplification shd be followed by reassoc before PRE
-   { OMR::reorderArrayExprGroup, OMR::IfEnabled }, // maximize opportunities hoisting of index array expressions
+   //{ OMR::treeSimplification, OMR::IfEnabled }, // Array length simplification shd be followed by reassoc before PRE
+   //{ OMR::reorderArrayExprGroup, OMR::IfEnabled }, // maximize opportunities hoisting of index array expressions
    // { OMR::partialRedundancyElimination, OMR::IfMoreThanOneBlock },
    // { OMR::localCSE, }, // common up expression which can benefit EA
    // { OMR::catchBlockRemoval, OMR::IfEnabled }, // if checks were removed
@@ -369,7 +369,7 @@ static const OptimizationStrategy warmStrategyOpts[] =
    { OMR::basicBlockOrdering, OMR::IfLoops }, // early ordering with no extension
    // { OMR::globalCopyPropagation, OMR::IfLoops }, // for Loop Versioner
    // { OMR::loopVersionerGroup, OMR::IfEnabledAndLoops },
-   { OMR::treeSimplification, OMR::IfEnabled }, // loop reduction block should be after PRE so that privatization
+   //{ OMR::treeSimplification, OMR::IfEnabled }, // loop reduction block should be after PRE so that privatization
    { OMR::treesCleansing }, // clean up gotos in code and convert to fall-throughs for loop reducer
    { OMR::redundantGotoElimination, OMR::IfNotJitProfiling }, // clean up for loop reducer.  Note: NEVER run this before PRE
    // { OMR::loopReduction, OMR::IfLoops }, // will have happened and it needs to be before loopStrider
