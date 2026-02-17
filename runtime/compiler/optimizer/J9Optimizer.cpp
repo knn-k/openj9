@@ -344,8 +344,29 @@ static const OptimizationStrategy warmStrategyOpts[] =
    { OMR::blockShuffling                                                             },
 #endif
 #if 1
-   // from hotStrategyOpts (try omitting one or more?)
+   // from hotStrategyOpts
+#if 0
    { OMR::loopCanonicalizationGroup,             OMR::IfLoops                  }, // required
+#else
+   // from loopCanonicalizationGroup
+   { OMR::globalCopyPropagation, OMR::IfLoops }, // propagate copies to allow better invariance detection
+     // From loopVersionerGroup
+#if 0
+     { OMR::loopVersionerGroup },
+#else
+    { OMR::basicBlockOrdering },
+    { OMR::inductionVariableAnalysis, OMR::IfLoops },
+    { OMR::loopCanonicalization },
+    // { OMR::loopVersioner },
+#endif
+   { OMR::deadTreesElimination }, // remove dead anchors created by check removal (versioning)
+   { OMR::treeSimplification }, // remove unreachable blocks (with nullchecks etc.) left by LoopVersioner
+   // { fieldPrivatization }, // use canonicalized loop to privatize fields
+   { OMR::treeSimplification }, // might fold expressions created by versioning/induction variables
+   // { loopSpecializerGroup, IfEnabledAndLoops }, // specialize the versioned loop if possible
+   // { deadTreesElimination, IfEnabledAndLoops }, // remove dead anchors created by specialization
+   // { treeSimplification, IfEnabledAndLoops }, // might fold expressions created by specialization
+#endif
    // { OMR::inductionVariableAnalysis,             OMR::IfLoops                  },
    { OMR::redundantInductionVarElimination,      OMR::IfLoops                  }, // required
    // { OMR::loopAliasRefinerGroup,                 OMR::IfLoops                  },
@@ -354,8 +375,8 @@ static const OptimizationStrategy warmStrategyOpts[] =
    // { OMR::deadTreesElimination },
    // { OMR::treeSimplification, OMR::IfEnabled },
    // { OMR::treeSimplification }, // might fold expressions created by versioning/induction variables
-   //{ OMR::treeSimplification, OMR::IfEnabled }, // Array length simplification shd be followed by reassoc before PRE
-   //{ OMR::reorderArrayExprGroup, OMR::IfEnabled }, // maximize opportunities hoisting of index array expressions
+   // { OMR::treeSimplification, OMR::IfEnabled }, // Array length simplification shd be followed by reassoc before PRE
+   // { OMR::reorderArrayExprGroup, OMR::IfEnabled }, // maximize opportunities hoisting of index array expressions
    // { OMR::partialRedundancyElimination, OMR::IfMoreThanOneBlock },
    // { OMR::localCSE, }, // common up expression which can benefit EA
    // { OMR::catchBlockRemoval, OMR::IfEnabled }, // if checks were removed
@@ -369,7 +390,7 @@ static const OptimizationStrategy warmStrategyOpts[] =
    { OMR::basicBlockOrdering, OMR::IfLoops }, // early ordering with no extension
    // { OMR::globalCopyPropagation, OMR::IfLoops }, // for Loop Versioner
    // { OMR::loopVersionerGroup, OMR::IfEnabledAndLoops },
-   //{ OMR::treeSimplification, OMR::IfEnabled }, // loop reduction block should be after PRE so that privatization
+   // { OMR::treeSimplification, OMR::IfEnabled }, // loop reduction block should be after PRE so that privatization
    { OMR::treesCleansing }, // clean up gotos in code and convert to fall-throughs for loop reducer
    { OMR::redundantGotoElimination, OMR::IfNotJitProfiling }, // clean up for loop reducer.  Note: NEVER run this before PRE
    // { OMR::loopReduction, OMR::IfLoops }, // will have happened and it needs to be before loopStrider
