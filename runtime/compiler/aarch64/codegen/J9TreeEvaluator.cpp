@@ -1265,9 +1265,26 @@ J9::ARM64::TreeEvaluator::awrtbariEvaluator(TR::Node *node, TR::CodeGenerator *c
 
    TR::Register *destinationRegister = cg->evaluate(node->getChild(2));
    TR::Node *secondChild = node->getSecondChild();
+
+   TR::Node *a2lNode = NULL;
+   static const bool enableDebug = feGetEnv("TR_enableDebugPT") != NULL;
+   if (enableDebug) {
+      if (secondChild->getOpCodeValue() == TR::l2i) {
+         TR::Node *tmpNode = secondChild->getFirstChild();
+         if (tmpNode && tmpNode->getOpCodeValue() == TR::a2l) {
+            a2lNode = tmpNode;
+            printf("@awrtbari1: %p, a2l %p (%d), child %p (%d)\n", node, a2lNode, a2lNode->getReferenceCount(), a2lNode->getFirstChild(), a2lNode->getFirstChild()->getReferenceCount());
+         }
+      }
+   }
+
    TR::Register *sourceRegister;
    bool killSource = false;
    bool usingCompressedPointers = TR::TreeEvaluator::getIndirectWrtbarValueNode(cg, node, secondChild, true);
+
+   if (a2lNode) {
+      printf("@awrtbari2: %p, a2l %p (%d), child %p (%d)\n", node, a2lNode, a2lNode->getReferenceCount(), a2lNode->getFirstChild(), a2lNode->getFirstChild()->getReferenceCount());
+   }
 
    if (secondChild->getReferenceCount() > 1 && secondChild->getRegister() != NULL)
       {
@@ -1287,6 +1304,10 @@ J9::ARM64::TreeEvaluator::awrtbariEvaluator(TR::Node *node, TR::CodeGenerator *c
       sourceRegister = cg->evaluate(secondChild);
       }
 
+   //if (a2lNode) {
+   //   printf("@awrtbari3: %p, a2l %p (%d), child %p (%d)\n", node, a2lNode, a2lNode->getReferenceCount(), a2lNode->getFirstChild(), a2lNode->getFirstChild()->getReferenceCount());
+   //}
+
    // Handle fieldwatch side effect first if it's enabled.
    if (comp->getOption(TR_EnableFieldWatch) && !node->getSymbolReference()->getSymbol()->isArrayShadowSymbol())
       {
@@ -1295,6 +1316,10 @@ J9::ARM64::TreeEvaluator::awrtbariEvaluator(TR::Node *node, TR::CodeGenerator *c
       // decrementing the node we skip doing it here and let the store evaluator do it.
       TR::TreeEvaluator::rdWrtbarHelperForFieldWatch(node, cg, destinationRegister /* sideEffectRegister */, sourceRegister /* valueReg */);
       }
+
+   //if (a2lNode) {
+   //   printf("@awrtbari4: %p, a2l %p (%d), child %p (%d)\n", node, a2lNode, a2lNode->getReferenceCount(), a2lNode->getFirstChild(), a2lNode->getFirstChild()->getReferenceCount());
+   //}
 
    TR::InstOpCode::Mnemonic storeOp = usingCompressedPointers ? TR::InstOpCode::strimmw : TR::InstOpCode::strimmx;
    TR::Register *translatedSrcReg = usingCompressedPointers ? cg->evaluate(node->getSecondChild()) : sourceRegister;
