@@ -355,7 +355,7 @@ static const OptimizationStrategy warmStrategyOpts[] =
    { OMR::loopVersionerGroup },
 #else
    { OMR::basicBlockOrdering },
-   //{ OMR::inductionVariableAnalysis, OMR::IfLoops },
+   { OMR::inductionVariableAnalysis, OMR::IfLoops },
    { OMR::loopCanonicalization },
    // { OMR::loopVersioner },
 #endif
