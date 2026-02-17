@@ -350,19 +350,19 @@ static const OptimizationStrategy warmStrategyOpts[] =
 #else
    // from loopCanonicalizationGroup
    { OMR::globalCopyPropagation, OMR::IfLoops }, // propagate copies to allow better invariance detection
-     // From loopVersionerGroup
+   // From loopVersionerGroup
 #if 0
-     { OMR::loopVersionerGroup },
+   { OMR::loopVersionerGroup },
 #else
-    { OMR::basicBlockOrdering },
-    { OMR::inductionVariableAnalysis, OMR::IfLoops },
-    { OMR::loopCanonicalization },
-    // { OMR::loopVersioner },
+   { OMR::basicBlockOrdering },
+   //{ OMR::inductionVariableAnalysis, OMR::IfLoops },
+   { OMR::loopCanonicalization },
+   // { OMR::loopVersioner },
 #endif
    { OMR::deadTreesElimination }, // remove dead anchors created by check removal (versioning)
    { OMR::treeSimplification }, // remove unreachable blocks (with nullchecks etc.) left by LoopVersioner
    // { fieldPrivatization }, // use canonicalized loop to privatize fields
-   { OMR::treeSimplification }, // might fold expressions created by versioning/induction variables
+   //{ OMR::treeSimplification }, // might fold expressions created by versioning/induction variables
    // { loopSpecializerGroup, IfEnabledAndLoops }, // specialize the versioned loop if possible
    // { deadTreesElimination, IfEnabledAndLoops }, // remove dead anchors created by specialization
    // { treeSimplification, IfEnabledAndLoops }, // might fold expressions created by specialization
