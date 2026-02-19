@@ -1263,12 +1263,40 @@ J9::ARM64::TreeEvaluator::awrtbariEvaluator(TR::Node *node, TR::CodeGenerator *c
    {
    TR::Compilation *comp = cg->comp();
 
+   TR::Node *valueNode = NULL;
+   TR::TreeEvaluator::getIndirectWrtbarValueNode(cg, node, valueNode, false);
+   TR::Register *valueReg = cg->evaluate(valueNode);
+   TR::Register *sideEffectRegister = cg->evaluate(node->getThirdChild()); // @@ same as getChild(2) ??
+
    TR::Register *destinationRegister = cg->evaluate(node->getChild(2));
    TR::Node *secondChild = node->getSecondChild();
    TR::Register *sourceRegister;
    bool killSource = false;
-   bool usingCompressedPointers = TR::TreeEvaluator::getIndirectWrtbarValueNode(cg, node, secondChild, true);
+   bool usingCompressedPointers = false;
 
+   // Handle fieldwatch side effect first if it's enabled.
+   if (comp->getOption(TR_EnableFieldWatch) && !node->getSymbolReference()->getSymbol()->isArrayShadowSymbol())
+      {
+      // The Third child (sideEffectNode) and valueReg's node is also used by the store evaluator below.
+      // The store evaluator will also evaluate+decrement it. In order to avoid double
+      // decrementing the node we skip doing it here and let the store evaluator do it.
+      TR::TreeEvaluator::rdWrtbarHelperForFieldWatch(node, cg, sideEffectRegister, valueReg);
+      }
+
+   if (comp->useCompressedPointers() && (node->getSymbolReference()->getSymbol()->getDataType() == TR::Address) && (secondChild->getDataType() != TR::Address))
+      {
+      usingCompressedPointers = true;
+      while (secondChild->getNumChildren() && secondChild->getOpCodeValue() != TR::a2l)
+         {
+         secondChild = secondChild->getFirstChild();
+         }
+      if (secondChild->getNumChildren())
+         {
+         secondChild = secondChild->getFirstChild();
+         }
+      }
+
+   TR::Register *compressedReg;
    if (secondChild->getReferenceCount() > 1 && secondChild->getRegister() != NULL)
       {
       if (!secondChild->getRegister()->containsInternalPointer())
@@ -1281,23 +1309,19 @@ J9::ARM64::TreeEvaluator::awrtbariEvaluator(TR::Node *node, TR::CodeGenerator *c
          }
       generateMovInstruction(cg, node, sourceRegister, secondChild->getRegister());
       killSource = true;
+      compressedReg = usingCompressedPointers ? cg->evaluate(node->getSecondChild()) : sourceRegister;
       }
    else
       {
       sourceRegister = cg->evaluate(secondChild);
+      compressedReg = usingCompressedPointers ? cg->evaluate(node->getSecondChild()) : sourceRegister;
       }
 
-   // Handle fieldwatch side effect first if it's enabled.
-   if (comp->getOption(TR_EnableFieldWatch) && !node->getSymbolReference()->getSymbol()->isArrayShadowSymbol())
-      {
-      // The Third child (sideEffectNode) and valueReg's node is also used by the store evaluator below.
-      // The store evaluator will also evaluate+decrement it. In order to avoid double
-      // decrementing the node we skip doing it here and let the store evaluator do it.
-      TR::TreeEvaluator::rdWrtbarHelperForFieldWatch(node, cg, destinationRegister /* sideEffectRegister */, sourceRegister /* valueReg */);
-      }
+   TR_ASSERT_FATAL(!comp->getOptions()->realTimeGC(), "Real-time GC not supported");
 
    TR::InstOpCode::Mnemonic storeOp = usingCompressedPointers ? TR::InstOpCode::strimmw : TR::InstOpCode::strimmx;
-   TR::Register *translatedSrcReg = usingCompressedPointers ? cg->evaluate(node->getSecondChild()) : sourceRegister;
+   // TR::Register *translatedSrcReg = usingCompressedPointers ? cg->evaluate(node->getSecondChild()) : sourceRegister;
+   TR::Register *storeRegister = usingCompressedPointers ? compressedReg : sourceRegister;
 
    TR::MemoryReference *tempMR = TR::MemoryReference::createWithRootLoadOrStore(cg, node);
 
@@ -1306,22 +1330,18 @@ J9::ARM64::TreeEvaluator::awrtbariEvaluator(TR::Node *node, TR::CodeGenerator *c
        cg->comp()->target().isSMP())
       generateSynchronizationInstruction(cg, TR::InstOpCode::dmb, node, TR::InstOpCode::ishst);
 
-   generateMemSrc1Instruction(cg, storeOp, node, tempMR, translatedSrcReg);
+   generateMemSrc1Instruction(cg, storeOp, node, tempMR, storeRegister);
 
    // Issue a StoreLoad barrier after each volatile store.
    if (node->getSymbolReference()->getSymbol()->isVolatile() && cg->comp()->target().isSMP())
       generateSynchronizationInstruction(cg, TR::InstOpCode::dmb, node, TR::InstOpCode::ish);
 
    wrtbarEvaluator(node, sourceRegister, destinationRegister, secondChild->isNonNull(), cg);
+   // @@ VMwrtbarEvaluator(node, sourceRegister, destinationRegister, destinationAddressRegister, NULL, secondChild->isNonNull(), true, usingCompressedPointers, cg);
 
    if (killSource)
       cg->stopUsingRegister(sourceRegister);
 
-   if (usingCompressedPointers)
-      {
-      // The reference count of secondChild has been bumped up.
-      cg->decReferenceCount(secondChild);
-      }
    cg->decReferenceCount(node->getSecondChild());
    cg->decReferenceCount(node->getChild(2));
    tempMR->decNodeReferenceCounts(cg);

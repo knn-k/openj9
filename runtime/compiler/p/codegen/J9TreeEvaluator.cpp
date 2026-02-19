@@ -1382,7 +1382,7 @@ TR::Register *J9::Power::TreeEvaluator::awrtbariEvaluator(TR::Node *node, TR::Co
    bool killSource = false;
 
    bool usingCompressedPointers = false;
-   bool bumpedRefCount = false;
+   //bool bumpedRefCount = false;
 
    if (comp->getOption(TR_EnableFieldWatch) && !node->getSymbolReference()->getSymbol()->isArrayShadowSymbol())
       {
