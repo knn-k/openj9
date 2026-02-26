@@ -2768,7 +2768,6 @@ void J9::Options::setupJITServerOptions()
 #if defined(TR_HOST_ARM64)
         self()->setOption(TR_DisableEDO); // Temporary JITServer limitation on aarch64
 #endif /* defined (TR_HOST_ARM64) */
-        self()->setOption(TR_DisableMethodIsCold); // Shady heuristic; better to disable to reduce client/server traffic
         self()->setOption(TR_DisableJProfilerThread);
         self()->setOption(TR_EnableJProfiling, false);
 
