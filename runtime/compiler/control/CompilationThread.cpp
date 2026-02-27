@@ -1983,7 +1983,6 @@ void TR::CompilationInfo::invalidateRequestsForNativeMethods(J9Class *clazz, J9V
 void TR::CompilationInfo::invalidateRequestsForUnloadedMethods(TR_OpaqueClassBlock *clazz, J9VMThread *vmThread,
     bool hotCodeReplacement)
 {
-    TR_J9VMBase *fe = TR_J9VMBase::get(_jitConfig, vmThread);
     J9Class *unloadedClass = clazz ? TR::Compiler->cls.convertClassOffsetToClassPtr(clazz) : NULL;
     bool verbose = TR::Options::getCmdLineOptions()->getVerboseOption(TR_VerboseHooks);
     if (verbose)
@@ -3145,7 +3144,7 @@ void TR::CompilationInfo::stopCompilationThreads()
         }
         int32_t assumptionsInRAT = rat->countRatAssumptions();
         fprintf(stderr, "Summary of assumptions: unreclaimed=%d, in RAT=%d\n", unreclaimedAssumptions,
-            rat->countRatAssumptions());
+            assumptionsInRAT);
 
         fprintf(stderr, "GCR bodies=%d, GCRSaves=%d GCRRecomp=%u\n", getPersistentInfo()->getNumGCRBodies(),
             getPersistentInfo()->getNumGCRSaves(), _statNumGCRInducedCompilations);
@@ -5940,8 +5939,6 @@ void *TR::CompilationInfo::compileOnSeparateThread(J9VMThread *vmThread, TR::IlG
 
                 TR_PersistentMethodInfo *methodInfo = bodyInfo->getMethodInfo();
                 TR_ASSERT(methodInfo, "assertion failure: methodInfo is NULL");
-
-                TR_Hotness hotness = bodyInfo->getHotness();
 
                 TR_Hotness nextHotness = optimizationPlan->getOptLevel();
 
@@ -8931,7 +8928,6 @@ TR_MethodMetaData *TR::CompilationInfoPerThreadBase::compile(J9VMThread *vmThrea
     TR::SegmentAllocator const &scratchSegmentProvider)
 {
     PORT_ACCESS_FROM_JAVAVM(_jitConfig->javaVM);
-    J9JavaVM *javaVM = _jitConfig->javaVM;
 
     TR_MethodMetaData *metaData = NULL;
 
@@ -9987,8 +9983,6 @@ bool TR::CompilationInfoPerThreadBase::methodCanBeCompiled(TR_Memory *trMemory, 
 
     char *methodName = method->nameChars();
     UDATA methodNameLen = method->nameLength();
-    char *methodSig = method->signatureChars();
-    UDATA methodSigLen = method->signatureLength();
 
     if (!(_jitConfig->runtimeFlags & J9JIT_COMPILE_CLINIT) && methodNameLen == 8
         && !J9OS_STRNCMP(methodName, "<clinit>", 8))
@@ -11055,7 +11049,6 @@ void TR::CompilationInfo::storeAOTInSharedCache(J9VMThread *vmThread, J9ROMMetho
     bool safeToStore;
     const J9JITDataCacheHeader *storedCompiledMethod = NULL;
     PORT_ACCESS_FROM_JAVAVM(jitConfig->javaVM);
-    TR::CompilationInfo *compInfo = TR::CompilationInfo::get();
 
     if (static_cast<TR_JitPrivateConfig *>(jitConfig->privateConfig)->aotValidHeader == TR_yes) {
         safeToStore = true;

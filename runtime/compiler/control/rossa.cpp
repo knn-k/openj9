@@ -831,7 +831,6 @@ static IDATA internalCompileClass(J9VMThread *vmThread, J9Class *clazz)
 
 extern "C" IDATA compileClass(J9VMThread *vmThread, jclass clazzParm)
 {
-    J9JavaVM *javaVM = vmThread->javaVM;
     J9Class *clazz;
     IDATA rc;
 
@@ -1837,7 +1836,6 @@ static int32_t J9THREAD_PROC fetchServerCachedAOTMethods(void *entryarg)
 
 extern "C" int32_t aboutToBootstrap(J9JavaVM *javaVM, J9JITConfig *jitConfig)
 {
-    char isSMP;
     PORT_ACCESS_FROM_JAVAVM(javaVM);
     bool isSharedAOT = false;
 

@@ -312,7 +312,6 @@ static bool handleResponse(JITServer::MessageType response, JITServer::ClientStr
             TR_ResolvedMethod *method2 = std::get<2>(recv);
             int32_t cpIndex2 = std::get<3>(recv);
             int32_t isStatic = std::get<4>(recv);
-            bool identical = false;
             UDATA f1 = 0, f2 = 0;
             J9Class *declaringClass1 = NULL, *declaringClass2 = NULL;
             J9ConstantPool *cp1 = (J9ConstantPool *)method1->ramConstantPool();
@@ -1098,7 +1097,6 @@ static bool handleResponse(JITServer::MessageType response, JITServer::ClientStr
             TR_OpaqueMethodBlock *method = std::get<0>(recv);
             auto *owningMethod = std::get<1>(recv);
             uint32_t vTableSlot = std::get<2>(recv);
-            bool isAOT = std::get<3>(recv);
             TR_ResolvedJ9JITServerMethodInfo methodInfo;
             // if in AOT mode, create a relocatable method mirror
             TR_ResolvedJ9JITServerMethod::createResolvedMethodMirror(methodInfo, method, vTableSlot, owningMethod, fe,
@@ -1257,8 +1255,6 @@ static bool handleResponse(JITServer::MessageType response, JITServer::ClientStr
 
             // 2. Mirror the resolved method on the client
             if (vTableIndex) {
-                TR_OpaqueMethodBlock *method = (TR_OpaqueMethodBlock *)ramMethod;
-
                 TR_ResolvedJ9JITServerMethodInfo methodInfo;
                 TR_ResolvedJ9JITServerMethod::createResolvedMethodFromJ9MethodMirror(methodInfo,
                     (TR_OpaqueMethodBlock *)ramMethod, (uint32_t)vTableIndex, owningMethod, fe, trMemory);
@@ -1664,7 +1660,6 @@ static bool handleResponse(JITServer::MessageType response, JITServer::ClientStr
             auto recv = client->getRecvData<TR_ResolvedJ9Method *, J9Method *, int32_t, uint32_t>();
             auto mirror = std::get<0>(recv);
             auto j9method = std::get<1>(recv);
-            auto cpIndex = std::get<2>(recv);
             auto vTableSlot = std::get<3>(recv);
 
             bool sameLoaders = false;
@@ -2776,7 +2771,6 @@ static TR_MethodMetaData *remoteCompilationEnd(J9VMThread *vmThread, TR::Compila
     TR_MethodToBeCompiled *entry = compInfoPT->getMethodBeingCompiled();
     J9JITConfig *jitConfig = compInfoPT->getJitConfig();
     TR::CompilationInfo *compInfo = TR::CompilationInfo::get();
-    const J9JITDataCacheHeader *storedCompiledMethod = NULL;
     PORT_ACCESS_FROM_JAVAVM(jitConfig->javaVM);
 
     if (!fe->isAOT_DEPRECATED_DO_NOT_USE()
@@ -2970,8 +2964,6 @@ TR_MethodMetaData *remoteCompile(J9VMThread *vmThread, TR::Compilation *compiler
 
     // Prepare the parameters for the compilation request
     J9Class *clazz = J9_CLASS_FROM_METHOD(method);
-    J9ROMClass *romClass = clazz->romClass;
-    J9ROMMethod *romMethod = J9_ROM_METHOD_FROM_RAM_METHOD(method);
     std::string detailsStr((const char *)&details, sizeof(details));
     TR::CompilationInfo *compInfo = compInfoPT->getCompilationInfo();
     TR_MethodToBeCompiled *entry = compInfoPT->getMethodBeingCompiled();
@@ -3378,8 +3370,7 @@ TR_MethodMetaData *remoteCompile(J9VMThread *vmThread, TR::Compilation *compiler
                     compInfoPT->setClientStream(client);
                 try {
                     // Recompile the method as a JitDump method
-                    TR_MethodMetaData *metaData
-                        = remoteCompile(vmThread, compiler, compilee, method, jitDumpDetails, compInfoPT);
+                    remoteCompile(vmThread, compiler, compilee, method, jitDumpDetails, compInfoPT);
                 } catch (std::exception &e) {
                     // We expect the above compilation to fail and throw
                     // Since we are already handling this failure, ignore failures during diagnostic recompilation

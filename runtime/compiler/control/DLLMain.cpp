@@ -206,7 +206,6 @@ IDATA J9VMDllMain(J9JavaVM *vm, IDATA stage, void *reserved)
     char *xjitCommandLineOptions = const_cast<char *>("");
     char *xaotCommandLineOptions = const_cast<char *>("");
     IDATA fullSpeedDebugSet = FALSE;
-    IDATA argIndex = 0;
 
     IDATA tlhPrefetch = 0;
     IDATA notlhPrefetch = 0;
@@ -215,8 +214,6 @@ IDATA J9VMDllMain(J9JavaVM *vm, IDATA stage, void *reserved)
     IDATA argIndexXaot = 0;
     IDATA argIndexXnojit = 0;
 
-    IDATA argIndexClient = 0;
-    IDATA argIndexServer = 0;
     IDATA argIndexQuickstart = 0;
 
     IDATA argIndexRIEnabled = 0;

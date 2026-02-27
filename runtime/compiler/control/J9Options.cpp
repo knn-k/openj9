@@ -2898,7 +2898,6 @@ bool J9::Options::fePostProcessJIT(void *base)
         TR::Options::disableMemoryDisclaimIfNeeded(jitConfig);
     }
 
-    J9JavaVM *vm = javaVM; // needed by FIND_ARG_IN_VMARGS macro
     int32_t argIndex = J9::Options::getExternalOptionIndex(J9::ExternalOptions::Xcodecache);
 
     if (argIndex >= 0) {
@@ -3357,7 +3356,6 @@ bool J9::Options::feLatePostProcess(void *base, TR::OptionSet *optionSet)
     {
         // The FIND_ARG_IN_VMARGS macro expect the J9JavaVM to be in the `vm` variable, instead of `javaVM`
         // The method uses the `vm` variable for the TR_J9VMBase
-        J9JavaVM *vm = javaVM;
         int32_t xxIProfileDuringStartupPhaseArgIndex
             = J9::Options::getExternalOptionIndex(J9::ExternalOptions::XXplusIProfileDuringStartupPhase);
         int32_t xxDisableIProfileDuringStartupPhaseArgIndex

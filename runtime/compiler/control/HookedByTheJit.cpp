@@ -221,7 +221,6 @@ TR::OptionSet *findOptionSet(J9Method *method, bool isAOT)
 static void reportHook(J9VMThread *curThread, const char *name, const char *format = NULL, ...)
 {
     J9JITConfig *jitConfig = curThread->javaVM->jitConfig;
-    TR::CompilationInfo *compInfo = TR::CompilationInfo::get(jitConfig);
     if (TR::Options::getCmdLineOptions()->getVerboseOption(TR_VerboseHooks)
         || TR::Options::getCmdLineOptions()->getVerboseOption(TR_VerboseHookDetails)) {
         TR_VerboseLog::CriticalSection vlogLock;
@@ -239,7 +238,6 @@ static void reportHook(J9VMThread *curThread, const char *name, const char *form
 static void reportHookFinished(J9VMThread *curThread, const char *name, const char *format = NULL, ...)
 {
     J9JITConfig *jitConfig = curThread->javaVM->jitConfig;
-    TR::CompilationInfo *compInfo = TR::CompilationInfo::get(jitConfig);
     if (TR::Options::getCmdLineOptions()->getVerboseOption(TR_VerboseHookDetails)) {
         TR_VerboseLog::CriticalSection vlogLock;
         TR_VerboseLog::writeLine(TR_Vlog_HD, "vmThread=%p hook %s finished ", curThread, name);
@@ -255,7 +253,6 @@ static void reportHookFinished(J9VMThread *curThread, const char *name, const ch
 static void reportHookDetail(J9VMThread *curThread, const char *name, const char *format, ...)
 {
     J9JITConfig *jitConfig = curThread->javaVM->jitConfig;
-    TR::CompilationInfo *compInfo = TR::CompilationInfo::get(jitConfig);
     if (TR::Options::getCmdLineOptions()->getVerboseOption(TR_VerboseHookDetails)) {
         TR_VerboseLog::CriticalSection vlogLock;
         TR_VerboseLog::writeLine(TR_Vlog_HD, "vmThread=%p hook %s detail ", curThread, name);
@@ -1897,7 +1894,6 @@ static void jitHookClassesUnload(J9HookInterface **hookInterface, UDATA eventNum
     J9VMThread *vmThread = unloadedEvent->currentThread;
     J9JITConfig *jitConfig = vmThread->javaVM->jitConfig;
 
-    TR_J9VMBase *vmj9 = TR_J9VMBase::get(jitConfig, vmThread);
     TR::CompilationInfo *compInfo = TR::CompilationInfo::get(jitConfig);
     TR::PersistentInfo *persistentInfo = compInfo->getPersistentInfo();
 
@@ -1930,22 +1926,6 @@ static void jitHookClassesUnload(J9HookInterface **hookInterface, UDATA eventNum
     //
     compInfo->setAllCompilationsShouldBeInterrupted();
 
-    bool firstRange = true;
-    bool coldRangeUninitialized = true;
-    uintptr_t rangeStartPC = 0;
-    uintptr_t rangeEndPC = 0;
-    uintptr_t rangeColdStartPC = 0;
-    uintptr_t rangeColdEndPC = 0;
-
-    uintptr_t rangeStartMD = 0;
-    uintptr_t rangeEndMD = 0;
-
-    TR_RuntimeAssumptionTable *rat = compInfo->getPersistentInfo()->getRuntimeAssumptionTable();
-
-    bool hasMethodOverrideAssumptions = false;
-    bool hasClassExtendAssumptions = false;
-    bool hasClassUnloadAssumptions = false;
-    bool hasClassRedefinitionAssumptions = false;
     bool p = TR::Options::getVerboseOption(TR_VerboseHookDetailsClassUnloading);
     if (p) {
         TR_VerboseLog::writeLineLocked(TR_Vlog_HD, "Classes unloaded");
@@ -5724,7 +5704,6 @@ void getOutOfIdleStatesUnlocked(TR::CompilationInfo::TR_SamplerStates expectedSt
         persistentInfo->setLastTimeSamplerThreadEnteredIdle(crtTime);
     } else if (compInfo->getSamplerState() == TR::CompilationInfo::SAMPLER_IDLE) {
         J9JavaVM *vm = jitConfig->javaVM;
-        J9VMRuntimeStateListener *listener = &vm->vmRuntimeStateListener;
         compInfo->setSamplerState(TR::CompilationInfo::SAMPLER_DEFAULT);
         jitConfig->samplingFrequency = TR::Options::getSamplingFrequency();
         persistentInfo->setLastTimeThreadsWereActive(
@@ -5783,7 +5762,6 @@ void samplerThreadStateLogic(TR::CompilationInfo *compInfo, TR_FrontEnd *fe, int
     J9JITConfig *jitConfig = compInfo->getJITConfig();
     TR::PersistentInfo *persistentInfo = compInfo->getPersistentInfo();
     uint64_t crtTime = persistentInfo->getElapsedTime();
-    bool notifyVMThread = false;
     int32_t waitTimeInDeepIdleToNotifyVM = compInfo->getSamplingThreadWaitTimeInDeepIdleToNotifyVM();
     J9JavaVM *vm = jitConfig->javaVM;
     uint32_t currentVMState = vm->internalVMFunctions->getVMRuntimeState(vm);
@@ -6240,7 +6218,6 @@ static int32_t J9THREAD_PROC samplerThreadProc(void *entryarg)
     J9JITConfig *jitConfig = (J9JITConfig *)entryarg;
     J9JavaVM *vm = jitConfig->javaVM;
     UDATA samplingPeriod = std::max(static_cast<UDATA>(TR::Options::_minSamplingPeriod), jitConfig->samplingFrequency);
-    bool idleMode = false;
     uint64_t lastSecondCheck = 0;
     uint64_t lastMinuteCheck = 0; // for activities that need to be done rarely (every minute)
     uint64_t lastFiveMinuteCheck = 0;
@@ -6537,7 +6514,6 @@ static int32_t J9THREAD_PROC samplerThreadProc(void *entryarg)
 
                             if (TR::Options::getCmdLineOptions()->getVerboseOption(TR_VerboseJitMemory)) {
                                 bool incomplete;
-                                TR_PersistentMemory *persistentMemory = compInfo->persistentMemory();
                                 TR_VerboseLog::CriticalSection vlogLock;
                                 uint64_t phMemAvail = compInfo->computeAndCacheFreePhysicalMemory(incomplete);
                                 if (phMemAvail != OMRPORT_MEMINFO_NOT_AVAILABLE)
@@ -7106,27 +7082,10 @@ static void jitReleaseCodeStackWalk(OMR_VMThread *omrVMThread, condYieldFromGCFu
 #endif /* JAVA_SPEC_VERSION >= 19 */
 
     TR::CompilationInfo *compInfo = TR::CompilationInfo::get(jitConfig);
-    TR_RuntimeAssumptionTable *rat = compInfo->getPersistentInfo()->getRuntimeAssumptionTable();
     // Now walk all the faint blocks, and collect the ones that are not still live
     //
     OMR::FaintCacheBlock *cursor = (OMR::FaintCacheBlock *)jitConfig->methodsToDelete;
     OMR::FaintCacheBlock *prev = 0;
-
-    uintptr_t rangeStartPC = 0;
-    uintptr_t rangeEndPC = 0;
-    uintptr_t rangeColdStartPC = 0;
-    uintptr_t rangeColdEndPC = 0;
-
-    uintptr_t rangeStartMD = 0;
-    uintptr_t rangeEndMD = 0;
-
-    bool firstRange = true;
-    bool coldRangeUninitialized = true;
-
-    bool hasMethodOverrideAssumptions = false;
-    bool hasClassExtendAssumptions = false;
-    bool hasClassUnloadAssumptions = false;
-    bool hasClassRedefinitionAssumptions = false;
 
     cursor = (OMR::FaintCacheBlock *)jitConfig->methodsToDelete;
     prev = 0;

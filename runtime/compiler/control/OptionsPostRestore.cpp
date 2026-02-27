@@ -386,7 +386,6 @@ void J9::OptionsPostRestore::invalidateCompiledMethod(J9Method *method, TR_J9VMB
             TR_VerboseLog::writeLine(" (%p)", method);
         }
 
-        TR_PersistentMethodInfo *pmi = bodyInfo->getMethodInfo();
         TR::Recompilation::invalidateMethodBody(startPC, fej9, TR_JitBodyInvalidations::PostRestoreExclude);
 
         // TODO: add method to a list to check the stack of java threads to print out message
@@ -408,7 +407,6 @@ bool J9::OptionsPostRestore::shouldInvalidateCompiledMethod(J9Method *method, TR
     bool shouldFilterMethod = false;
 
     if (compilationFiltersExist) {
-        J9ROMMethod *romMethod = J9_ROM_METHOD_FROM_RAM_METHOD(method);
         J9UTF8 *className;
         J9UTF8 *name;
         J9UTF8 *signature;
