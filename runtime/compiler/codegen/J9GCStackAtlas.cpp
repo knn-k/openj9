@@ -54,7 +54,6 @@ void J9::GCStackAtlas::close(TR::CodeGenerator *cg)
 
     // Merge adjacent similar maps
     //
-    uint8_t *start = cg->getCodeStart();
     ListElement<TR_GCStackMap> *mapEntry, *next;
     TR_GCStackMap *map, *nextMap;
 

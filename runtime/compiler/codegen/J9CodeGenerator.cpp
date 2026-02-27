@@ -305,8 +305,6 @@ void J9::CodeGenerator::lowerCompressedRefs(TR::TreeTop *treeTop, TR::Node *node
             return;
     }
 
-    TR::Node *heapBase = node->getSecondChild();
-
     TR::SymbolReference *symRef = loadOrStoreNode->getSymbolReference();
     TR::ILOpCodes loadOrStoreOp;
     bool isLoad = true;
@@ -1156,7 +1154,6 @@ void J9::CodeGenerator::lowerTreeIfNeeded(TR::Node *node, int32_t childNumberOfN
                     = ((TR_ResolvedJ9Method *)methodSymbol->getResolvedMethodSymbol()->getResolvedMethod())
                           ->getExistingJittedBodyInfo();
                 if (bodyInfo && bodyInfo->getHotness() <= warm && !bodyInfo->getIsProfilingBody()) {
-                    TR_ResolvedMethod *method = methodSymbol->castToResolvedMethodSymbol()->getResolvedMethod();
                     int isInLoop = -1;
                     TR::Block *block = self()->getCurrentBlock();
 
@@ -2053,7 +2050,6 @@ void J9::CodeGenerator::doInstructionSelection()
             if (compactVSSStack && !_variableSizeSymRefPendingFreeList.empty()) {
                 TR::Node *ttNode = (node->getOpCodeValue() == TR::treetop) ? node->getFirstChild() : node;
                 auto it = _variableSizeSymRefPendingFreeList.begin();
-                TR::SymbolReference *symRef;
                 while (it != _variableSizeSymRefPendingFreeList.end()) {
                     // Element is removed within freeVariableSizeSymRef. Need a reference to next element
                     auto next = it;
@@ -2752,7 +2748,6 @@ TR::Node *J9::CodeGenerator::createOrFindClonedNode(TR::Node *node, int32_t numC
 
 void J9::CodeGenerator::jitAddUnresolvedAddressMaterializationToPatchOnClassRedefinition(void *firstInstruction)
 {
-    TR_J9VMBase *fej9 = (TR_J9VMBase *)(self()->fe());
 #if defined(J9VM_OPT_JITSERVER)
     if (self()->comp()->compileRelocatableCode() || self()->comp()->isOutOfProcessCompilation())
 #else
@@ -2777,7 +2772,6 @@ void J9::CodeGenerator::compressedReferenceRematerialization()
     TR::Node *node;
     TR::Compilation *comp = self()->comp();
     OMR::Logger *log = comp->log();
-    TR_J9VMBase *fej9 = (TR_J9VMBase *)(self()->fe());
     bool trace = comp->getOption(TR_TraceCG);
 
     static bool disableRematforCP = feGetEnv("TR_DisableWrtBarOpt") != NULL;
@@ -3489,7 +3483,9 @@ void J9::CodeGenerator::anchorRematNodesIfNeeded(TR::Node *node, TR::TreeTop *tt
 void J9::CodeGenerator::insertEpilogueYieldPoints()
 {
     // Look for all returns, and insert async check before them
+#if 0
     TR::CFG *cfg = self()->comp()->getFlowGraph();
+#endif
 
     for (TR::TreeTop *treeTop = self()->comp()->getStartTree(); treeTop; treeTop = treeTop->getNextTreeTop()) {
         TR::Node *node = treeTop->getNode();
@@ -3720,7 +3716,7 @@ void J9::CodeGenerator::fixUpProfiledInterfaceGuardTest()
                                     / sizeof(UDATA)),
                             node->getBranchDestination());
                     }
-                    TR::TreeTop *rangeTestTT = TR::TreeTop::create(comp, treeTop->getPrevTreeTop(), rangeCheckTest);
+                    TR::TreeTop::create(comp, treeTop->getPrevTreeTop(), rangeCheckTest);
                     TR::Block *newBlock = block->split(treeTop, cfg, false, false);
                     cfg->addEdge(block, node->getBranchDestination()->getEnclosingBlock());
                     newBlock->setIsExtensionOfPreviousBlock();

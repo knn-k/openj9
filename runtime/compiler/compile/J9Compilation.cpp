@@ -857,7 +857,6 @@ bool J9::Compilation::verifyCompressedRefsAnchors(bool anchorize)
 
     // create anchors if required
     if (anchorize) {
-        TR_Pair<TR::Node, TR::TreeTop> *info;
         // all non-null tt fields indicate some loads/stores were found
         // with no corresponding anchors
         //

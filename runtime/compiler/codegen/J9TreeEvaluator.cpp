@@ -1239,7 +1239,6 @@ uint32_t J9::TreeEvaluator::calculateInstanceOfOrCheckCastSequences(TR::Node *in
     else {
         TR::StaticSymbol *castClassSym = castClassSymRef->getSymbol()->getStaticSymbol();
         TR_OpaqueClassBlock *castClass = (TR_OpaqueClassBlock *)castClassSym->getStaticAddress();
-        J9UTF8 *castClassName = J9ROMCLASS_CLASSNAME(TR::Compiler->cls.romClassOf((TR_OpaqueClassBlock *)castClass));
         // Cast class is a primitive (implies this is an instanceof, since you can't cast an object to a primitive).
         // Usually removed by the optimizer, but in case they're not we know they'll always fail, no object can be of a
         // primitive type. We don't even need to do a null test unless it's a checkcastAndNULLCHK node.
@@ -1268,8 +1267,6 @@ uint32_t J9::TreeEvaluator::calculateInstanceOfOrCheckCastSequences(TR::Node *in
             if (mayBeNull) {
                 sequences[i++] = NullTest;
             }
-
-            TR_OpaqueClassBlock *topProfiledClass = NULL;
 
             // If the caller doesn't provide the output param don't bother with profiling.
             //
@@ -1591,7 +1588,6 @@ bool J9::TreeEvaluator::checkcastShouldOutlineSuperClassTest(TR::Node *node, TR:
 {
     // caller should always first call instanceOfOrCheckCastNeedSuperTest
     TR::Node *castClassNode = node->getSecondChild();
-    TR::MethodSymbol *helperSym = node->getSymbol()->castToMethodSymbol();
     TR::SymbolReference *castClassSymRef = castClassNode->getSymbolReference();
     TR_ByteCodeInfo bcInfo = node->getByteCodeInfo();
     TR::Compilation *comp = cg->comp();

@@ -46,8 +46,6 @@ int32_t J9::SetMonitorStateOnBlockEntry::addSuccessors(TR::CFGNode *cfgNode,
         "callerIndex %d walkOlyExceptionSuccs %d\n",
         cfgNode->getNumber(), monitorStack, dontPropagateMonitor, monitorType, callerIndex, walkOnlyExceptionSuccs);
 
-    bool firstSuccessor = true;
-
     // to reiterate:
     // 3 cases to consider when propagating the monitorStack
     // 1. MonitorEnter
@@ -439,8 +437,6 @@ void J9::SetMonitorStateOnBlockEntry::set(bool &lmmdFailed, bool traceIt)
             TR::Node *node = tt->getNode();
             if (node->getOpCodeValue() == TR::treetop || node->getOpCodeValue() == TR::NULLCHK)
                 node = node->getFirstChild();
-
-            TR::ILOpCodes opCode = node->getOpCodeValue();
 
             if ((node->getOpCode().isStore() && // only monents are represented by this store now
                     node->getSymbol()->holdsMonitoredObject() && !node->isLiveMonitorInitStore())) {

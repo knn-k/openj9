@@ -1803,9 +1803,11 @@ TR::CodeGenerator::GPUResult J9::CodeGenerator::dumpNVVMIR(TR::TreeTop *firstTre
     bool trace = self()->comp()->getOption(TR_TraceCG);
     OMR::Logger *log = self()->comp()->log();
 
+#ifdef ENABLE_GPU
     short computeMajor, computeMinor, computeCapability;
     int nvvmMajorVersion = 0;
     int nvvmMinorVersion = 0;
+#endif
 
     _gpuHasNullCheck = false;
     _gpuHasBndCheck = false;
@@ -1958,7 +1960,6 @@ TR::CodeGenerator::GPUResult J9::CodeGenerator::dumpNVVMIR(TR::TreeTop *firstTre
         }
     }
 
-    TR::ResolvedMethodSymbol *method = self()->comp()->getJittedMethodSymbol();
     ListIterator<TR::ParameterSymbol> pi(parms);
     TR::ParameterSymbol *parm;
 

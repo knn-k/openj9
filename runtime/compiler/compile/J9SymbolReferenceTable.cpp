@@ -327,7 +327,6 @@ TR::SymbolReference *J9::SymbolReferenceTable::createSystemRuntimeHelper(TR_Runt
 TR::SymbolReference *J9::SymbolReferenceTable::findOrCreateConstantPoolAddressSymbolRef(
     TR::ResolvedMethodSymbol *owningMethodSymbol)
 {
-    TR_J9VMBase *fej9 = (TR_J9VMBase *)(fe());
     void *cpAddress = owningMethodSymbol->getResolvedMethod()->constantPool();
     ListIterator<TR::SymbolReference> i(&_constantPoolAddressSymbolRefs);
     TR::SymbolReference *symRef;
@@ -1189,7 +1188,6 @@ TR::SymbolReference *J9::SymbolReferenceTable::findOrCreateReportMethodExitSymbo
 TR::SymbolReference *J9::SymbolReferenceTable::findOrCreateHeaderFlagsSymbolRef()
 {
     if (!element(headerFlagsSymbol)) {
-        TR_J9VMBase *fej9 = (TR_J9VMBase *)(fe());
         TR::SymbolReference *symRef;
         // object header flags now occupy 4bytes on 64-bit
         symRef = new (trHeapMemory())
@@ -1354,7 +1352,6 @@ TR::SymbolReference *J9::SymbolReferenceTable::findOrCreateStringSymbol(TR::Reso
     TR_ResolvedMethod *owningMethod = owningMethodSymbol->getResolvedMethod();
     void *stringConst = owningMethod->stringConstant(cpIndex);
     TR::SymbolReference *symRef;
-    bool isString = true;
     if (owningMethod->isUnresolvedString(cpIndex)) {
         symRef = findOrCreateCPSymbol(owningMethodSymbol, cpIndex, TR::Address, false, 0);
         symRef->setOffset((uintptr_t)stringConst);
@@ -1568,7 +1565,7 @@ TR::SymbolReference *J9::SymbolReferenceTable::createShadowSymbolWithoutCpIndex(
     TR::Symbol *sym = TR::Symbol::createShadow(trHeapMemory(), type);
     TR::SymbolReference *symRef;
 
-    int32_t unresolvedIndex = isResolved ? 0 : _numUnresolvedSymbols++;
+    if (!isResolved) _numUnresolvedSymbols++;
     symRef = new (trHeapMemory()) TR::SymbolReference(self(), sym, owningMethodSymbol->getResolvedMethodIndex(), -1);
     initShadowSymbol(owningMethod, symRef, isResolved, type, offset, isUnresolvedInCP);
     return symRef;
