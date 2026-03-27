@@ -1113,33 +1113,19 @@ FUNC_LABEL(_interfaceSlotsUnavailable):
 	cmp	x11, x13
 #ifndef NO_ITABLEWALK_CHECK
 	beq	L_hitITable
-	// Before going to the VM helper do iTable walk N times
-	// check iTable[0]
+	// Before going to the VM helper, we will saturate iTable walking here
 	ldr	x12, [x14, #J9TR_J9Class_iTable]			// Load the iTable pointer
+L_iTableLoop:
 	cbz	x12, L_callHelper				// check iTable != null
 	ldr	x13, [x12, #J9TR_J9ITable_interfaceClass]	// Load iTable class
 	cmp	x11, x13
 	beq	L_hitITable
-	// check iTable[1]
 	ldr	x12, [x12, #J9TR_J9ITable_next]			// Load the next iTable pointer
-	cbz	x12, L_callHelper				// check iTable != null
-	ldr	x13, [x12, #J9TR_J9ITable_interfaceClass]	// Load iTable class
-	cmp	x11, x13
-	beq	L_hitITable
-    // check iTable[2]
-	ldr	x12, [x12, #J9TR_J9ITable_next]			// Load the next iTable pointer
-	cbz	x12, L_callHelper				// check iTable != null
-	ldr	x13, [x12, #J9TR_J9ITable_interfaceClass]	// Load iTable class
-	cmp	x11, x13
-	beq	L_hitITable
-	// check iTable[3]
-	ldr	x12, [x12, #J9TR_J9ITable_next]			// Load the next iTable pointer
-	cbz	x12, L_callHelper				// check iTable != null
-	ldr	x13, [x12, #J9TR_J9ITable_interfaceClass]	// Load iTable class
-	cmp	x11, x13
-#endif /* ~NO_ITABLEWALK_CHECK */
+	b	L_iTableLoop
+#else /* ~NO_ITABLEWALK_CHECK */
 	bne	L_callHelper
-	// lastITable is a match
+#endif /* ~NO_ITABLEWALK_CHECK */
+	// ITable entry is a match
 L_hitITable:
 	ldr	x11, [x8, #J9TR_ICSnippet_ITableIndex]		// Load the itable offset from the snippet
 	tst	x11, #J9TR_J9_ITABLE_OFFSET_TAG_BITS		// Call the helper if the itable offset is tagged
