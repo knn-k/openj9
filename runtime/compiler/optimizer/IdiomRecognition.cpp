@@ -3034,6 +3034,9 @@ int32_t TR_CISCTransformer::perform()
                     comp()->dumpFlowGraph(log);
                     comp()->dumpMethodTrees(log, "Trees after transforming CISC instructions");
                 }
+                if (comp()->getMethodHotness() == warm) {
+                    fprintf(stderr, "@@ CISCTransformer %s@warm\n", comp()->signature());
+                }
             }
 
             if (showMesssagesStdout())
