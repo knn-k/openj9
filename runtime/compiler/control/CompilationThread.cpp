@@ -8025,9 +8025,6 @@ TR_MethodMetaData *TR::CompilationInfoPerThreadBase::wrappedCompile(J9PortLibrar
                     options->setOption(TR_DisableOnDemandLiteralPoolRegister);
 
                     options->setOption(TR_DisableIPA);
-#if defined(TR_HOST_ARM64)
-                    options->setOption(TR_DisableEDO); // Temporary AOT limitation on aarch64
-#endif /* defined (TR_HOST_ARM64) */
                     options->setDisabled(OMR::invariantArgumentPreexistence, true);
                     options->setOption(TR_DisableHierarchyInlining);
                     options->setOption(TR_DisableKnownObjectTable);
