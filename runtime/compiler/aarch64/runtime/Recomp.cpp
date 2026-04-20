@@ -55,7 +55,21 @@ TR_PersistentJittedBodyInfo *J9::Recompilation::getJittedBodyInfoFromPC(void *st
     if (linkageInfo->isSamplingMethodBody()) {
         info = *(TR_PersistentJittedBodyInfo **)((int8_t *)startPC + OFFSET_SAMPLING_METHODINFO_FROM_STARTPC);
     } else if (linkageInfo->isCountingMethodBody()) {
-        TR_UNIMPLEMENTED();
+        int32_t jitEntryOffset = getJitEntryOffset(linkageInfo);
+        int32_t *jitEntry = (int32_t *)((int8_t *)startPC + jitEntryOffset);
+        int32_t *branchLocation = (int32_t *)((int8_t *)jitEntry + OFFSET_COUNTING_BRANCH_FROM_JITENTRY);
+        int32_t binst = *branchLocation;
+        int32_t toSnippet;
+
+        if ((binst & B_COND_INSTR_MASK) == (TR::InstOpCode::getOpCodeBinaryEncoding(TR::InstOpCode::b_cond) | TR::CC_LT)) {
+            // blt instruction to snippet
+            toSnippet = ((binst << 8) & 0xFFFFE000) >> 11; // offset (imm19)
+        } else {
+            branchLocation = (int32_t *)((int8_t *)branchLocation + ARM64_INSTRUCTION_LENGTH);
+            binst = *branchLocation;
+            toSnippet = (binst << 6) >> 4; // offset (imm26)
+        }
+        info = *(TR_PersistentJittedBodyInfo **)((int8_t *)branchLocation + toSnippet + ARM64_INSTRUCTION_LENGTH);
     }
     return info;
 }
@@ -82,7 +96,13 @@ void J9::Recompilation::fixUpMethodCode(void *startPC)
 {
     J9::PrivateLinkage::LinkageInfo *linkageInfo = J9::PrivateLinkage::LinkageInfo::get(startPC);
     if (linkageInfo->isCountingMethodBody()) {
-        TR_UNIMPLEMENTED();
+        TR_PersistentJittedBodyInfo *bodyInfo = getJittedBodyInfoFromPC(startPC);
+        bodyInfo->setCounter(-1);
+
+        if (DEBUG_ARM64_RECOMP) {
+            printf("fixUpMethodCode for counting, setting bodyInfo (%p) counter to -1\n", bodyInfo);
+            fflush(stdout);
+        }
     } else {
         // Preprologue
         // -24: mov	x8, lr  <= Branch back to this instruction
@@ -148,7 +168,30 @@ void J9::Recompilation::methodHasBeenRecompiled(void *oldStartPC, void *newStart
     }
 
     if (linkageInfo->isCountingMethodBody()) {
-        TR_UNIMPLEMENTED();
+        // Turn the instruction before the counting branch in the
+        // counting/profiling prologue into a bl to countingPatchCallSite
+        // which expects the new startPC.
+
+        patchAddr = (int32_t *)((uint8_t *)oldStartPC + getJitEntryOffset(linkageInfo) + OFFSET_COUNTING_BRANCH_FROM_JITENTRY - ARM64_INSTRUCTION_LENGTH);
+
+        helperAddress = (intptr_t)runtimeHelperValue(TR_ARM64countingPatchCallSite);
+        if (!TR::Compiler->target.cpu.isTargetWithinUnconditionalBranchImmediateRange(helperAddress, (intptr_t)patchAddr)
+            || TR::Options::getCmdLineOptions()->getOption(TR_StressTrampolines)) {
+            helperAddress = TR::CodeCacheManager::instance()->findHelperTrampoline(TR_ARM64countingPatchCallSite, (void *)patchAddr);
+        }
+        newInstr = encodeDistanceInBranchInstruction(TR::InstOpCode::bl, helperAddress - (intptr_t)patchAddr);
+        if (DEBUG_ARM64_RECOMP) {
+            printf("\tcounting recomp, change instruction location (%p) above blt to branch encoding 0x%x (to TR_ARM64countingPatchCallSite)\n",
+                patchAddr, newInstr);
+            fflush(stdout);
+        }
+
+        omrthread_jit_write_protect_disable();
+        *patchAddr = newInstr;
+        arm64CodeSync((uint8_t *)patchAddr, ARM64_INSTRUCTION_LENGTH);
+        omrthread_jit_write_protect_enable();
+
+        bytesToSaveAtStart = getJitEntryOffset(linkageInfo) + OFFSET_COUNTING_BRANCH_FROM_JITENTRY;
     } else {
         // Turn the call to samplingMethodRecompile into a call to samplingPatchCallSite
 
@@ -212,7 +255,7 @@ void J9::Recompilation::methodCannotBeRecompiled(void *oldStartPC, TR_FrontEnd *
         patchAddr = (int32_t *)((uint8_t *)oldStartPC + getJitEntryOffset(linkageInfo));
         distance = OFFSET_REVERT_INTP_FIXED_PORTION - 2 * getJitEntryOffset(linkageInfo);
         if (linkageInfo->isCountingMethodBody())
-            TR_UNIMPLEMENTED();
+            distance -= 12; // @@ 4 in p -- should define constant somewhere?
         else
             distance += OFFSET_SAMPLING_PREPROLOGUE_FROM_STARTPC;
 
@@ -230,7 +273,33 @@ void J9::Recompilation::methodCannotBeRecompiled(void *oldStartPC, TR_FrontEnd *
         if (!methodInfo->hasBeenReplaced()) // HCR: VM presumably already has the method in its proper state
             fej9->revertToInterpreted(methodInfo->getMethodInfo());
     } else if (linkageInfo->isCountingMethodBody()) {
-        TR_UNIMPLEMENTED();
+        // We can do either of two things: 1) reverse to interpreter; 2) bypass the recomp
+        // We may need to decide dynamically.
+
+        // bypass the recomp prologue by replacing the first instruction with
+        // a branch to the normal prologue
+        int32_t *branchLocation = (int32_t *)((uint8_t *)oldStartPC + getJitEntryOffset(linkageInfo) + OFFSET_COUNTING_BRANCH_FROM_JITENTRY);
+        patchAddr = (int32_t *)((uint8_t *)oldStartPC + getJitEntryOffset(linkageInfo));
+        distance = OFFSET_COUNTING_BRANCH_FROM_JITENTRY + ARM64_INSTRUCTION_LENGTH;
+        int32_t newInstr = encodeDistanceInBranchInstruction(TR::InstOpCode::b, distance);
+
+        omrthread_jit_write_protect_disable();
+        *patchAddr = newInstr;
+        arm64CodeSync((uint8_t *)patchAddr, ARM64_INSTRUCTION_LENGTH);
+        omrthread_jit_write_protect_enable();
+
+        if (DEBUG_ARM64_RECOMP) {
+            printf("MethodCannotBeRecompiled counting recomp, branch over counting prologue by patching inst 0x%x at location %p\n",
+                newInstr, patchAddr);
+            fflush(stdout);
+        }
+
+        // Make sure that we do not profile any longer in there
+        TR_PersistentProfileInfo *profileInfo = bodyInfo->getProfileInfo();
+        if (profileInfo) {
+            profileInfo->setProfilingFrequency(INT_MAX);
+            profileInfo->setProfilingCount(-1);
+        }
     } else {
         // For async compilation, the old method is not fixed up anyway
         if (!fej9->isAsyncCompilation()) {
@@ -274,7 +343,22 @@ void fixupMethodInfoAddressInCodeCache(void *startPC, void *bodyInfo)
     if (linkageInfo->isSamplingMethodBody()) {
         *(void **)((int8_t *)startPC + OFFSET_SAMPLING_METHODINFO_FROM_STARTPC) = bodyInfo;
     } else if (linkageInfo->isCountingMethodBody()) {
-        TR_UNIMPLEMENTED();
+        int32_t jitEntryOffset = getJitEntryOffset(linkageInfo);
+        int32_t *jitEntry = (int32_t *)((int8_t *)startPC + jitEntryOffset);
+        int32_t *branchLocation = (int32_t *)((int8_t *)jitEntry + OFFSET_COUNTING_BRANCH_FROM_JITENTRY);
+        int32_t binst = *branchLocation;
+        int32_t toSnippet;
+
+        if ((binst & B_COND_INSTR_MASK) == (TR::InstOpCode::getOpCodeBinaryEncoding(TR::InstOpCode::b_cond) | TR::CC_LT)) {
+            // blt instruction to snippet
+            toSnippet = ((binst << 8) & 0xFFFFE000) >> 11; // offset (imm19)
+        } else {
+            // next instruction of blt @@ ?? if the method too large?
+            branchLocation = (int32_t *)((int8_t *)branchLocation + ARM64_INSTRUCTION_LENGTH);
+            binst = *branchLocation;
+            toSnippet = (binst << 6) >> 4; // offset (imm26)
+        }
+        *(void **)((int8_t *)branchLocation + toSnippet + ARM64_INSTRUCTION_LENGTH) = bodyInfo;
     }
     return;
 }

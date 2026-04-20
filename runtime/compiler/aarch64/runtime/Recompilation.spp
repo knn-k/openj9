@@ -44,6 +44,7 @@
 	.set	J9TR_CountingLR_BodyInfo, 0
 	.set	J9TR_CountingLR_StartPC, 8
 	.set	J9TR_CountingPrologueSize, 40 // 10 instructions
+	.set	J9TR_CPatchLR_Branch, 0 // @@ need to be determined
 	.set	J9TR_SamplingLR_BodyInfo, 0
 	.set	J9TR_SamplingLR_StartPC, 16
 	.set	J9TR_BodyInfo_MethodInfo, 8
@@ -56,8 +57,48 @@
 	.text
 	.align	2
 
+// _countingRecompileMethod
+//
+// Trash:	x10
+
+// Recompilation Snippet
+//	bl	TR_ARM64countingRecompileMethod
+//	.dword	jittedBodyInfo <-- LR points here
+//	.dword	old startPC
+
 FUNC_LABEL(_countingRecompileMethod):
-	hlt	#0	// Not implemented yet
+	// on entry, x8 contains the saved LR, x9 may contain a vtable offset
+	// normal parameter registers also live
+	ldr	x10, [x30, #J9TR_CountingLR_StartPC]	// get the old startPC, J9TR_CountingLR_StartPC = 8
+	str	x10, [J9SP, #-8]!			// preserve old startPC
+	stp	x8, x9, [J9SP, #-16]!			// preserve saved LR and vtable offset
+	stp	x1, x0, [J9SP, #-16]!			// preserve argument registers x0-x7, must be in this order
+	stp	x3, x2, [J9SP, #-16]!
+	stp	x5, x4, [J9SP, #-16]!
+	stp	x7, x6, [J9SP, #-16]!
+	mov	x1, x10					// old startPC is the second arg to jitRetranslateMethod
+	mov	x2, x8					// saved LR is the third arg to jitRetranslateMethod
+	ldr	x6, [x30, #J9TR_CountingLR_BodyInfo]	// J9TR_CountingLR_BodyInfo = 0
+	ldr	x6, [x6, #J9TR_BodyInfo_MethodInfo]	// fetch method info
+	ldr	x7, const_jitRetranslateMethod		// load helper address
+	ldr	x0, [x6, #J9TR_MethodInfo_J9Method]	// rammethod is the first arg to jitRetranslateMethod
+	blr	x7					// call jitRetranslateMethod
+	cbnz	x0, L_countingGotNewAddress		// if return value is 0 then no recompilation was performed
+	ldr	x1, [J9SP, #72]				// fetch old startPC
+	add	x10, x1, #J9TR_CountingPrologueSize	// x10 = old startPC + counting prologue size
+	ldurh	w1, [x1, #J9TR_InterpreterEntryOffset]	// fetch interpreter entry prologue size
+	add	x10, x10, w1, UXTH			// x10 = old startPC + counting prologue size + interpreter entry prologue size
+	b	L_countingRestoreAndDispatch
+L_countingGotNewAddress:
+	ldurh	w1, [x0, #J9TR_InterpreterEntryOffset]	// fetch interpreter entry prologue size
+	add	x10, x0, w1, UXTH			// x10 = new startPC + interpreter entry prologue size
+L_countingRestoreAndDispatch:
+	ldp	x7, x6, [J9SP], #16			// restore argument registers
+	ldp	x5, x4, [J9SP], #16
+	ldp	x3, x2, [J9SP], #16
+	ldp	x1, x0, [J9SP], #16
+	ldp	x30, x9, [J9SP], #24			// restore saved LR and vtable offset
+	br	x10
 
 // _samplingRecompileMethod
 //
@@ -113,8 +154,43 @@ const_jitRetranslateMethod:
 
 	.text
 
+// _countingPatchCallSite
+
+// Recompile Snippet (See ARM64RecompilationSnippet.cpp)
+// bl	TR_ARM64countingRecompileMethod
+// .dword	jittedBodyInfo <-- LR points here
+// .dword	code start location
+
 FUNC_LABEL(_countingPatchCallSite):
-	hlt	#0	// Not implemented yet
+	// on entry, x8 contains the saved LR, x9 may contain a vtable offset
+	// See methodHasBeenRecompiled() in Recomp.cpp
+	// normal parameter registers also live
+
+	stp	x0, x1, [J9SP, #-72]!			// save registers
+	stp	x2, x3, [J9SP, #16]
+	stp	x4, x5, [J9SP, #32]
+	stp	x6, x7, [J9SP, #48]
+	str	x9, [J9SP, #64]
+	ldr	w2, [x30, #J9TR_CPatchLR_Branch]
+	sbfx	x3, x2, #5, #19				// extract imm19 from B.cond instruction @@
+	add	x4, x30, x3, LSL #2
+	add	x4, x4, #4
+	ldr	x3, [x4, #J9TR_CountingLR_BodyInfo]
+	ldr	x3, [x3, #J9TR_BodyInfo_MethodInfo]	// fetch method info, first arg to commonPatchPoint
+
+	// HCR
+	ldr	x2, [x3, #J9TR_MethodInfo_J9Method]
+	ldr	x2, [x2, #J9TR_MethodPCStartOffset]
+	tst	x2, #J9TR_MethodNotCompiledBit
+	beq	L_commonPatchPoint
+	// method is not compiled
+	mov	x30, x4					// fake coming from the snippet
+	ldp	x0, x1, [J9SP], #16			// restore registers
+	ldp	x2, x3, [J9SP], #16
+	ldp	x4, x5, [J9SP], #16
+	ldp	x6, x7, [J9SP], #16
+	ldr	x9, [J9SP], #8				// restore vtable offset
+	b	_countingRecompileMethod
 
 // _samplingPatchCallSite
 

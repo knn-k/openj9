@@ -93,10 +93,61 @@ TR::Instruction *TR_ARM64Recompilation::generatePrePrologue()
 
 TR::Instruction *TR_ARM64Recompilation::generatePrologue(TR::Instruction *cursor)
 {
+#if 1
     TR::Recompilation *recomp = comp()->getRecompilationInfo();
     if (!recomp->useSampling()) {
         // counting recompilation
         TR_UNIMPLEMENTED();
     }
+#else
+    if (couldBeCompiledAgain()) {
+        // counting recompilation
+        // x9 may contain the vtable offset, and must be preserved here
+        // See PicBuilder.spp and Recompilation.spp
+        TR::Machine *machine = cg()->machine();
+        TR::Register *x8 = machine->getRealRegister(TR::RealRegister::x8);
+        TR::Register *x10 = machine->getRealRegister(TR::RealRegister::x10);
+        TR::Register *lr = machine->getRealRegister(TR::RealRegister::lr); // Link Register
+        TR::Register *xzr = machine->getRealRegister(TR::RealRegister::xzr); // zero register
+        TR::Node *firstNode = _compilation->getStartTree()->getNode();
+        TR::LabelSymbol *snippetLabel = generateLabelSymbol(cg());
+
+        // 4 instructions to load the address in x10: Need to be fixed length
+        intptr_t addr = (intptr_t)getCounterAddress();
+        cursor = generateTrg1ImmInstruction(cg(), TR::InstOpCode::movzx, firstNode, x10,
+                                            (addr & 0xFFFF), cursor);
+        cursor = generateTrg1ImmInstruction(cg(), TR::InstOpCode::movkx, firstNode, x10,
+                                            (((addr >> 16) & 0xFFFF) | TR::MOV_LSL16), cursor);
+        cursor = generateTrg1ImmInstruction(cg(), TR::InstOpCode::movkx, firstNode, x10,
+                                            (((addr >> 32) & 0xFFFF) | TR::MOV_LSL32), cursor);
+        cursor = generateTrg1ImmInstruction(cg(), TR::InstOpCode::movkx, firstNode, x10,
+                                            (((addr >> 48) & 0xFFFF) | TR::MOV_LSL48), cursor);
+
+        cursor = generateTrg1MemInstruction(cg(), TR::InstOpCode::ldrimmw, firstNode, x8,
+                                            TR::MemoryReference::createWithDisplacement(cg(), x10, 0), cursor);
+
+        if (isProfilingCompilation()) {
+            // This only applies to JitProfiling, as JProfiling uses sampling
+            TR_ASSERT(_compilation->getProfilingMode() == JitProfiling, "JProfiling should not use counting mechanism to trip recompilation");
+
+            cursor = generateCompareImmInstruction(cg(), firstNode, x8, 0, false, cursor); // false is for 32-bit comparison
+            // This is just padding for consistent code length
+            cursor = generateInstruction(cg(), TR::InstOpCode::nop, firstNode, cursor);
+        } else {
+            cursor = generateTrg1Src1ImmInstruction(cg(), TR::InstOpCode::subsimmw, firstNode, x8, x8, 1, cursor);
+            cursor = generateMemSrc1Instruction(cg(), TR::InstOpCode::strimmw, firstNode,
+                                                TR::MemoryReference::createWithDisplacement(cg(), x10, 0), x8, cursor);
+        }
+
+        // x8 must contain the saved LR; see Recompilation.spp
+        cursor = generateTrg1Src2Instruction(cg(), TR::InstOpCode::orrx, firstNode, x8, xzr, lr, cursor);
+        // This instruction is replaced after successful recompilation
+        cursor = generateInstruction(cg(), TR::InstOpCode::nop, firstNode, cursor);
+        // This instruction checks the flag set by subsimmw or by CompareImm above
+        cursor = generateConditionalBranchInstruction(cg(), firstNode, snippetLabel, TR::CC_LT, cursor);
+        TR::Snippet *snippet = new (cg()->trHeapMemory()) TR::ARM64RecompilationSnippet(snippetLabel, cursor, cg());
+        cg()->addSnippet(snippet);
+    }
+#endif
     return cursor;
 }
