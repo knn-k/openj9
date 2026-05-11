@@ -1026,8 +1026,7 @@ TR::Register *J9::ARM64::JNILinkage::buildDirectDispatch(TR::Node *callNode)
 #else
     const int maxPostRegisters = maxRegisters + extraPostReg;
 #endif
-    TR::RegisterDependencyConditions *deps
-        = new (trHeapMemory()) TR::RegisterDependencyConditions(maxRegisters, maxPostRegisters, trMemory());
+    TR::RegisterDependencyConditions *deps = RegDeps(maxRegisters, maxPostRegisters, cg());
 
     buildJNIArgs(callNode, deps, passThread, passReceiver, killNonVolatileGPRs);
 

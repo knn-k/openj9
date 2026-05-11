@@ -1285,8 +1285,8 @@ TR::Register *J9::ARM64::PrivateLinkage::buildDirectDispatch(TR::Node *callNode)
     const TR::ARM64LinkageProperties &pp = getProperties();
     // Extra post dependency for killing vector registers (see KillVectorRegs)
     const int extraPostReg = killsVectorRegisters() ? 1 : 0;
-    TR::RegisterDependencyConditions *dependencies = new (trHeapMemory()) TR::RegisterDependencyConditions(
-        pp.getNumberOfDependencyGPRegisters(), pp.getNumberOfDependencyGPRegisters() + extraPostReg, trMemory());
+    TR::RegisterDependencyConditions *dependencies
+        = RegDeps(pp.getNumberOfDependencyGPRegisters(), pp.getNumberOfDependencyGPRegisters() + extraPostReg, cg());
 
     int32_t argSize = buildArgs(callNode, dependencies);
 
@@ -2226,8 +2226,8 @@ TR::Register *J9::ARM64::PrivateLinkage::buildIndirectDispatch(TR::Node *callNod
 
     // Extra post dependency for killing vector registers (see KillVectorRegs)
     const int extraPostReg = killsVectorRegisters() ? 1 : 0;
-    TR::RegisterDependencyConditions *dependencies = new (trHeapMemory()) TR::RegisterDependencyConditions(
-        pp.getNumberOfDependencyGPRegisters(), pp.getNumberOfDependencyGPRegisters() + extraPostReg, trMemory());
+    TR::RegisterDependencyConditions *dependencies
+        = RegDeps(pp.getNumberOfDependencyGPRegisters(), pp.getNumberOfDependencyGPRegisters() + extraPostReg, cg());
 
     int32_t argSize = buildArgs(callNode, dependencies);
 
