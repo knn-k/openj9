@@ -310,7 +310,12 @@ void J9::RecognizedCallTransformer::process_java_lang_StringLatin1_compareTo_BBI
     arraycmplenNode->setAndIncChild(2, lim);
     arraycmplenNode->setSymbolReference(getSymRefTab()->findOrCreateArrayCmpLenSymbol());
 
-    TR::TreeTop *arraycmplenTreeTop = TR::TreeTop::create(comp(), treetop->getPrevTreeTop(), arraycmplenNode);
+    TR::DataType arraycmplenDataType = arraycmplenNode->getDataType();
+    TR::SymbolReference *arraycmplenSymRef
+        = comp()->getSymRefTab()->createTemporary(comp()->getMethodSymbol(), arraycmplenDataType);
+    TR::Node *arraycmplenStoreNode = TR::Node::createStore(node, arraycmplenSymRef, arraycmplenNode);
+
+    TR::TreeTop *arraycmplenTreeTop = TR::TreeTop::create(comp(), treetop->getPrevTreeTop(), arraycmplenStoreNode);
 
     /*
      * generate the following:
@@ -321,7 +326,7 @@ void J9::RecognizedCallTransformer::process_java_lang_StringLatin1_compareTo_BBI
      *   }
      */
     // compare lim and arraycmplen
-    TR::Node *ifCmpNode = TR::Node::createif(TR::iflcmpeq, lim, arraycmplenNode);
+    TR::Node *ifCmpNode = TR::Node::createif(TR::iflcmpeq, lim, TR::Node::createLoad(node, arraycmplenSymRef));
     TR::TreeTop *ifCmpTreeTop = TR::TreeTop::create(comp(), ifCmpNode);
 
     TR::DataType resultDataType = node->getDataType();
@@ -335,11 +340,12 @@ void J9::RecognizedCallTransformer::process_java_lang_StringLatin1_compareTo_BBI
 
     // result = array1[arraycmplen] - array2[arraycmplen];
     TR::SymbolReferenceTable *srTab = comp()->getSymRefTab();
-    TR::Node *arrayElemAddr1 = TR::Node::create(node, TR::aladd, 2, arrayAddr1->duplicateTree(), arraycmplenNode);
+    TR::Node *aclNode = TR::Node::createLoad(node, arraycmplenSymRef);
+    TR::Node *arrayElemAddr1 = TR::Node::create(node, TR::aladd, 2, arrayAddr1->duplicateTree(), aclNode);
     TR::SymbolReference *arraySymRef1 = srTab->findOrCreateArrayShadowSymbolRef(TR::Int8, arrayObj1);
     TR::Node *arrayByte1 = TR::Node::createWithSymRef(node, TR::bloadi, 1, arrayElemAddr1, arraySymRef1);
     TR::Node *arrayInt1 = TR::Node::create(node, TR::bu2i, 1, arrayByte1);
-    TR::Node *arrayElemAddr2 = TR::Node::create(node, TR::aladd, 2, arrayAddr2->duplicateTree(), arraycmplenNode);
+    TR::Node *arrayElemAddr2 = TR::Node::create(node, TR::aladd, 2, arrayAddr2->duplicateTree(), aclNode);
     TR::SymbolReference *arraySymRef2 = srTab->findOrCreateArrayShadowSymbolRef(TR::Int8, arrayObj2);
     TR::Node *arrayByte2 = TR::Node::createWithSymRef(node, TR::bloadi, 1, arrayElemAddr2, arraySymRef2);
     TR::Node *arrayInt2 = TR::Node::create(node, TR::bu2i, 1, arrayByte2);
