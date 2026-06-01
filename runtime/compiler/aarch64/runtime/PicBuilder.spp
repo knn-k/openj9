@@ -723,10 +723,9 @@ const_jitResolveConstantDynamic:
 // trash: x10, x11, x12
 
 // For virtual unresolved call, we generate following instructions
-//  b     VirtualUnresolvedSnippet ; change this to "movz x9, #low16bits"
-//  movk  x9, #0, LSL #16
-//  sxtw  x9, w9
-//  ldr   x9, [vftReg, x9]
+//  b     VirtualUnresolvedSnippet ; change this to "movz w9, #low16bits"
+//  movk  w9, #0, LSL #16
+//  ldr   x9, [vftReg, w9, sxtw]
 //  blr   x9
 //
 // We encode the resolved index value (signed 32 bits) into movz and movk instructions
@@ -780,7 +779,7 @@ L_callVirtual:
 	cbnz	w2, L_spinForUpdate				// failed to lock
 	FINISH_MODIFYING_CODE
 	mov	x12, x0						// resolved index
-	sub	x0, x10, #16					// get the address of the movk instruction
+	sub	x0, x10, #12					// get the address of the movk instruction
 	START_MODIFYING_CODE
 	ldr	w1, [x0]					// fetch the movk instruction
 	ubfx	x2, x12, #16, #16				// upper 16 bits of the index
@@ -788,11 +787,10 @@ L_callVirtual:
 	str	w1, [x0]					// store the movk instruction
 	mov	x1, #4						// 1 instruction to flush
 	bl	flushICache
-	ldr	w1, const_movz_x9				// fetch movz template
+	ldr	w1, const_movz_w9				// fetch movz template
 	ubfx	x12, x12, #0, #16					// lower 16 bits of the index
-	sub	x0, x10, #20					// get the address of the b instruction
 	orr	w1, w1, w12, LSL #5				// encode the index in the movz instruction
-	str	w1, [x0]					// store the movz instruction
+	str	w1, [x10, #-16]					// store the movz instruction at the address of the b instruction
 	mov	x1, #4						// 1 instruction to flush
 	bl	flushICache
 	mov	w0, #0
@@ -815,8 +813,8 @@ L_spinForUpdate:
 	b	L_calloutVirtual				// another thread completed rewriting instructions
 
 	.align	2
-const_movz_x9:
-	.word	0xD2800009					// template for "movz x9, #0"
+const_movz_w9:
+	.word	0x52800009					// template for "movz w9, #0"
 
 // Handles calls to interface call snippets
 //
