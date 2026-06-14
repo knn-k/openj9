@@ -1097,7 +1097,7 @@ L_picRegistration:
 
 FUNC_LABEL(_interfaceSlotsUnavailable):
 //#define NO_HELPER_LASTITABLE_CHECK
-//#define NO_ITABLEWALK_CHECK
+#define NO_ITABLEWALK_CHECK
 #ifndef NO_HELPER_LASTITABLE_CHECK
 	// Before iTable walk or going to the VM helper, check if the receiver class lastITable matches the interface
 	// class of the method being called and if so, use it to quickly look up the vtable offset and make the call
@@ -1131,6 +1131,8 @@ L_hitITable:
 	neg	x11, x11
 	add	x11, x11, #J9TR_InterpVTableOffset		// Convert to a JIT vft offset
 	ldr	x12, [x14, x11]					// Load the method
+	mov	x16, x12 // @@ for debug @@
+	mov	x17, x30 // @@ for debug @@
 	br	x12						// Call the method (control does not return here)
 
 L_callHelper:
