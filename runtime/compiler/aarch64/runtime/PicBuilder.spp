@@ -1142,12 +1142,12 @@ L_callHelper:
 	stp	x5, x4, [J9SP, #16]
 	stp	x3, x2, [J9SP, #32]
 	stp	x1, x0, [J9SP, #48]
-	mov	x7, x30						// preserve LR
+	mov	x8, x30						// preserve LR
 	ldr	x10, [x30, #J9TR_ICSnippet_codeCacheReturnAddress]	// protect code cache RA in x10 (in L_commonJitDispatch, it is expected)
 
 	LOAD_CLASS(x3, w3, x0)					// Load class pointer
 	and	x0, x3, #~(J9TR_RequiredClassAlignment-1)	// mask VFT bits
-	add	x1, x7, #J9TR_ICSnippet_InterfaceClass		// Address of interface info
+	add	x1, x8, #J9TR_ICSnippet_InterfaceClass		// Address of interface info
 	mov	x2, x10						// Load code cache RA
 	bl	FUNC_LABEL(jitLookupInterfaceMethod)		// call the helper
 	b	L_commonJitDispatch
