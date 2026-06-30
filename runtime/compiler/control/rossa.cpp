@@ -1292,11 +1292,21 @@ extern "C" jint onLoadInternal(J9JavaVM *javaVM, J9JITConfig *jitConfig, char *x
         = (TR::CodeCacheManager *)j9mem_allocate_memory(sizeof(TR::CodeCacheManager), J9MEM_CATEGORY_JIT);
     if (codeCacheManager == NULL)
         return -1;
-    memset(codeCacheManager, 0, sizeof(TR::CodeCacheManager));
+    memset(codeCacheManager, 249, sizeof(TR::CodeCacheManager));
 
     // must initialize manager using the global (not thread specific) fe because current thread isn't guaranteed to live
     // longer than the manager
     new (codeCacheManager) TR::CodeCacheManager(feWithoutThread, TR::Compiler->rawAllocator);
+
+    printf("ccm(1) @ %p:\n", codeCacheManager);
+    uint8_t *p = (uint8_t *)(codeCacheManager);
+    for (int ii = 0; ii < sizeof(TR::CodeCacheManager); ii++) {
+        printf(" %02x", p[ii]);
+        if (ii % 16 == 15) {
+            printf("\n");
+        }
+    }
+    printf("\n");
 
     TR::CodeCacheConfig &codeCacheConfig = codeCacheManager->codeCacheConfig();
 
@@ -1368,15 +1378,25 @@ extern "C" jint onLoadInternal(J9JavaVM *javaVM, J9JITConfig *jitConfig, char *x
     codeCacheConfig._highCodeCacheOccupancyThresholdInBytes
         = TR::Options::_highCodeCacheOccupancyPercentage * (totalCacheBytes / 100);
 
-    static char *segmentCarving = feGetEnv("TR_CodeCacheConsolidation");
-    bool useConsolidatedCodeCache
-        = segmentCarving != NULL || TR::Options::getCmdLineOptions()->getOption(TR_EnableCodeCacheConsolidation);
+    //static char *segmentCarving = feGetEnv("TR_CodeCacheConsolidation");
+    //bool useConsolidatedCodeCache
+    //    = segmentCarving != NULL || TR::Options::getCmdLineOptions()->getOption(TR_EnableCodeCacheConsolidation);
+    bool useConsolidatedCodeCache = false;
 
     if (TR::Options::getCmdLineOptions()->getNumCodeCachesToCreateAtStartup() > 0) // user has specified option
         numCodeCachesToCreateAtStartup = TR::Options::getCmdLineOptions()->getNumCodeCachesToCreateAtStartup();
     // We cannot create at startup more code caches than the maximum
     if (numCodeCachesToCreateAtStartup > maxNumberOfCodeCaches)
         numCodeCachesToCreateAtStartup = maxNumberOfCodeCaches;
+
+    printf("ccm(2) @ %p, %d:\n", codeCacheManager, codeCacheManager->usingRepository());
+    for (int ii = 0; ii < sizeof(TR::CodeCacheManager); ii++) {
+        printf(" %02x", p[ii]);
+        if (ii % 16 == 15) {
+            printf("\n");
+        }
+    }
+    printf("\n");
 
     firstCodeCache = codeCacheManager->initialize(useConsolidatedCodeCache, numCodeCachesToCreateAtStartup);
 
