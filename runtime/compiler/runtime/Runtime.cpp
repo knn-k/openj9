@@ -1566,6 +1566,13 @@ void initializeCodeRuntimeHelperTable(J9JITConfig *jitConfig, char isSMP)
     SET(TR_ARM64arrayTranslateTRTO, (void *)__arrayTranslateTRTO, TR_Helper);
     SET(TR_ARM64arrayTranslateTRTO255, (void *)__arrayTranslateTRTO255, TR_Helper);
     SET(TR_ARM64arrayTranslateTROTNoBreak, (void *)__arrayTranslateTROTNoBreak, TR_Helper);
+#if defined(LINUX)
+    SET(TR_ARM64clockGetTime, (void *)clock_gettime, TR_System);
+#elif defined(OSX)
+    SET(TR_ARM64clockGetTime, (void *)clock_gettime_nsec_np, TR_System);
+#else
+#error Unsupported platform
+#endif
 
 #elif defined(TR_HOST_S390)
     SET(TR_S390double2Long, (void *)0, TR_Helper);

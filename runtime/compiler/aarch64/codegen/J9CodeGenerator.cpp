@@ -29,6 +29,7 @@
 #include "codegen/CodeGenerator_inlines.hpp"
 #include "codegen/GenerateInstructions.hpp"
 #include "compile/Compilation.hpp"
+#include "il/AutomaticSymbol.hpp"
 #include "runtime/CodeCacheManager.hpp"
 
 extern void TEMPORARY_initJ9ARM64TreeEvaluatorTable(TR::CodeGenerator *cg);
@@ -277,3 +278,15 @@ bool J9::ARM64::CodeGenerator::callUsesHelperImplementation(TR::Symbol *sym)
             && sym->castToMethodSymbol()->getMandatoryRecognizedMethod()
                 == TR::java_lang_invoke_ComputedCalls_dispatchJ9Method);
 }
+
+#if defined(LINUX)
+TR::SymbolReference *J9::ARM64::CodeGenerator::getNanoTimeTemp()
+{
+    if (_nanoTimeTemp == NULL) {
+        TR::AutomaticSymbol *sym = TR::AutomaticSymbol::create(self()->trHeapMemory(), TR::Aggregate, sizeof(struct timeval));
+        self()->comp()->getMethodSymbol()->addAutomatic(sym);
+        _nanoTimeTemp = new (self()->trHeapMemory()) TR::SymbolReference(self()->comp()->getSymRefTab(), sym);
+    }
+    return _nanoTimeTemp;
+}
+#endif /* defined(LINUX) */

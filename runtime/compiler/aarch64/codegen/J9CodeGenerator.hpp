@@ -120,6 +120,15 @@ public:
     bool suppressInliningOfRecognizedMethod(TR::RecognizedMethod method);
 
     bool callUsesHelperImplementation(TR::Symbol *sym);
+
+#if defined(LINUX)
+    TR::SymbolReference *getNanoTimeTemp();
+#endif /* defined(LINUX) */
+
+private:
+#if defined(LINUX)
+    TR::SymbolReference *_nanoTimeTemp;
+#endif /* defined(LINUX) */
 };
 
 }} // namespace J9::ARM64
