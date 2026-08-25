@@ -7441,6 +7441,53 @@ static TR::Register *inlineIntegerLongCompareUnsigned(TR::Node *node, bool isInt
     return resultReg;
 }
 
+#if defined(LINUX)
+#define J9TIME_NANOSECONDS_PER_SECOND ((I_64)1000000000)
+
+static TR::Register *inlineNanoTime(TR::Node *node, TR::CodeGenerator *cg)
+{
+    // printf("@@ nanoTime %s\n", cg->comp()->signature());
+
+    TR::Compilation *comp = cg->comp();
+    TR_J9VMBase *fej9 = (TR_J9VMBase *)(comp->fe());
+
+    TR::SymbolReference *getTime = comp->getSymRefTab()->findOrCreateRuntimeHelper(TR_ARM64clockGetTime);
+    TR::Node *timespecNode = TR::Node::createWithSymRef(node, TR::loadaddr, 0, cg->getNanoTimeTemp());
+    TR::Node *clockSourceNode = TR::Node::create(node, TR::iconst, 0, CLOCK_MONOTONIC);
+    TR::Node *callNode = TR::Node::createWithSymRef(TR::call, 2, 2, clockSourceNode, timespecNode, getTime);
+    // TODO: Use performCall ?
+    TR::Linkage *linkage = cg->getLinkage(getTime->getSymbol()->getMethodSymbol()->getLinkageConvention());
+    linkage->buildDirectDispatch(callNode);
+
+    TR::Register *resultReg = cg->allocateRegister();
+    TR::Register *tmpReg1 = cg->allocateRegister();
+    TR::Register *tmpReg2 = cg->allocateRegister();
+
+    // result = tv_sec * 1,000,000,000 + tv_nsec
+    // assuming both tv_sec and tv_nsec are 64-bit long
+    TR::MemoryReference *mr_timespec = MRef_node(cg, timespecNode); // The address is evaluated when calling clock_gettime
+    Inst_Trg2Mem(cg, OP::ldpoffx, node, tmpReg1, resultReg, mr_timespec); // the offset is limited for ldpoffx
+    loadConstant64(cg, node, J9TIME_NANOSECONDS_PER_SECOND, tmpReg2);
+    Inst_Trg1Src3(cg, OP::maddx, node, resultReg, tmpReg1, tmpReg2, resultReg);
+
+    cg->stopUsingRegister(tmpReg1);
+    cg->stopUsingRegister(tmpReg2);
+
+    // Store the result to memory if necessary
+    if (node->getNumChildren() == 1) {
+        TR::Register *resultAddress = cg->evaluate(node->getFirstChild());
+        Inst_MemSrc1(cg, OP::strimmx, node, MRef_disp(cg, resultAddress, 0), resultReg);
+        cg->decReferenceCount(node->getFirstChild());
+    } else {
+        TR_ASSERT_FATAL(node->getNumChildren() == 0, "nanoTime must have zero or one children");
+    }
+
+    node->setRegister(resultReg);
+
+    return resultReg;
+}
+#endif /* defined(LINUX) */
+
 bool J9::ARM64::CodeGenerator::inlineDirectCall(TR::Node *node, TR::Register *&resultReg)
 {
     TR::CodeGenerator *cg = self();
@@ -7770,6 +7817,17 @@ bool J9::ARM64::CodeGenerator::inlineDirectCall(TR::Node *node, TR::Register *&r
                 }
                 break;
             }
+
+#if defined(LINUX)
+            case TR::java_lang_System_nanoTime: {
+                TR_J9VMBase *fej9 = (TR_J9VMBase *)(comp->fe());
+                if (fej9->supportsFastNanoTime() && !fej9->isSnapshotModeEnabled()) {
+                    resultReg = inlineNanoTime(node, cg);
+                    return true;
+                }
+                break;
+            }
+#endif /* defined(LINUX) */
 
             default:
                 break;
